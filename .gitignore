@@ -92,3 +92,7 @@ frontend/.npm-cache/
 *.temp
 .cache/
 
+*.doc
+/references
+grad-project.md
+*.pptx
