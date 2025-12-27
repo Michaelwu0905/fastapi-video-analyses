@@ -115,7 +115,7 @@ const analyzeVideo = async () => {
   errorMsg.value = null
 
   try {
-    const response = await axios.post('http://127.0.0.1:8000/api/analyze', {
+    const response = await axios.post('/api/analyze', {
       url: videoUrl.value
     })
     videoInfo.value = response.data
