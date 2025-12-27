@@ -150,7 +150,7 @@ async def analyze_video(request: VideoRequest):
                 "duration": video_data.get("duration", 0),
                 "duration_formatted": format_duration(video_data.get("duration", 0)),
                 "pubdate": pubdate,
-                "msg": "✅ 成功访问B站视频！"
+                "msg": "成功访问B站视频"
             }
             
         except httpx.RequestError as exc:
