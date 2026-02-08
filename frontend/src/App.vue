@@ -34,7 +34,7 @@
 
     <!-- 结果展示 -->
     <div v-if="videoInfo" class="result-layout">
-      <!-- 视频基本信息展示 (纯文字版) -->
+      <!-- 视频基本信息展示 -->
       <div class="text-info-card">
         <div class="video-header">
           <div class="bvid-badge">{{ videoInfo.bvid }}</div>
@@ -89,6 +89,84 @@
           <span class="value">{{ videoInfo.share_formatted }}</span>
         </div>
       </div>
+
+      <!-- 传播力指标 -->
+      <div class="metrics-card">
+        <h3>传播力指标</h3>
+        <div class="metrics-grid">
+          <div class="metric-item">
+            <span class="metric-label">综合得分</span>
+            <span class="metric-value">{{ videoInfo.composite_score_formatted }}</span>
+            <span class="metric-raw">({{ videoInfo.composite_score }})</span>
+          </div>
+          <div class="metric-item">
+            <span class="metric-label">粘性度</span>
+            <span class="metric-value">{{ videoInfo.stickiness_percent }}</span>
+            <span class="metric-raw">({{ videoInfo.stickiness }})</span>
+          </div>
+        </div>
+        <div class="metrics-formula">
+          <p>综合得分 = 0.728*播放 + 0.154*弹幕 + 0.327*投币 + 0.242*收藏 - 0.192*点赞 - 0.157*分享</p>
+          <p>粘性度 = (投币 + 收藏 + 分享) / 播放量</p>
+        </div>
+      </div>
+
+      <!-- 评论操作区域 -->
+      <div class="comments-section">
+        <div class="comments-header">
+          <h3>评论数据</h3>
+          <span class="saved-count" v-if="videoInfo.saved_comments_count > 0">
+            已保存 {{ videoInfo.saved_comments_count }} 条
+          </span>
+        </div>
+        
+        <div class="comments-actions">
+          <button 
+            class="action-btn fetch-btn" 
+            @click="fetchComments"
+            :disabled="fetchingComments"
+          >
+            <span v-if="fetchingComments" class="spinner"></span>
+            <span v-else>爬取评论</span>
+          </button>
+          <button 
+            class="action-btn view-btn" 
+            @click="toggleCommentsList"
+            :disabled="fetchingComments"
+          >
+            {{ showComments ? '收起列表' : '查看评论列表' }}
+          </button>
+        </div>
+
+        <!-- 爬取状态提示 -->
+        <div v-if="fetchStatus" class="fetch-status" :class="fetchStatus.type">
+          {{ fetchStatus.msg }}
+        </div>
+
+        <!-- 评论列表 -->
+        <div v-if="showComments" class="comments-list">
+          <div v-if="loadingComments" class="loading-comments">
+            加载中...
+          </div>
+          <div v-else-if="commentsList.length === 0" class="no-comments">
+            暂无评论数据，请先点击"爬取评论"
+          </div>
+          <table v-else class="comments-table">
+            <thead>
+              <tr>
+                <th class="col-index">序号</th>
+                <th class="col-content">评论内容</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="comment in commentsList" :key="comment.index">
+                <td class="col-index">{{ comment.index }}</td>
+                <td class="col-content">{{ comment.content }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
 
     <!-- 页脚 -->
@@ -107,12 +185,23 @@ const loading = ref(false)
 const videoInfo = ref(null)
 const errorMsg = ref(null)
 
+// 评论相关状态
+const fetchingComments = ref(false)
+const fetchStatus = ref(null)
+const showComments = ref(false)
+const loadingComments = ref(false)
+const commentsList = ref([])
+
 const analyzeVideo = async () => {
   if (!videoUrl.value.trim()) return
   
   loading.value = true
   videoInfo.value = null
   errorMsg.value = null
+  // 重置评论状态
+  fetchStatus.value = null
+  showComments.value = false
+  commentsList.value = []
 
   try {
     const response = await axios.post('/api/analyze', {
@@ -127,6 +216,59 @@ const analyzeVideo = async () => {
     }
   } finally {
     loading.value = false
+  }
+}
+
+const fetchComments = async () => {
+  if (!videoInfo.value) return
+  
+  fetchingComments.value = true
+  fetchStatus.value = { type: 'info', msg: '正在爬取评论，请稍候...' }
+
+  try {
+    const response = await axios.post('/api/fetch-comments', {
+      bvid: videoInfo.value.bvid,
+      aid: videoInfo.value.aid
+    })
+    fetchStatus.value = { type: 'success', msg: response.data.msg }
+    // 更新已保存评论数
+    videoInfo.value.saved_comments_count = response.data.saved_count
+    // 自动加载评论列表
+    await loadCommentsList()
+    showComments.value = true
+  } catch (err) {
+    if (err.response && err.response.data) {
+      fetchStatus.value = { type: 'error', msg: err.response.data.detail }
+    } else {
+      fetchStatus.value = { type: 'error', msg: '爬取评论失败' }
+    }
+  } finally {
+    fetchingComments.value = false
+  }
+}
+
+const loadCommentsList = async () => {
+  if (!videoInfo.value) return
+  
+  loadingComments.value = true
+  try {
+    const response = await axios.get(`/api/comments/${videoInfo.value.bvid}`)
+    commentsList.value = response.data.comments
+  } catch (err) {
+    console.error('加载评论失败:', err)
+  } finally {
+    loadingComments.value = false
+  }
+}
+
+const toggleCommentsList = async () => {
+  if (showComments.value) {
+    showComments.value = false
+  } else {
+    showComments.value = true
+    if (commentsList.value.length === 0) {
+      await loadCommentsList()
+    }
   }
 }
 </script>
@@ -302,7 +444,7 @@ const analyzeVideo = async () => {
   font-size: 14px;
   color: var(--text-secondary);
   line-height: 1.6;
-  white-space: pre-wrap; /* 保留简介中的换行 */
+  white-space: pre-wrap;
 }
 
 /* 数据网格 */
@@ -335,6 +477,208 @@ const analyzeVideo = async () => {
   color: var(--text-primary);
 }
 
+/* 传播力指标 */
+.metrics-card {
+  background: var(--card-bg);
+  padding: 24px;
+  border-radius: 12px;
+  border: 1px solid var(--border-color);
+  box-shadow: var(--shadow-subtle);
+}
+
+.metrics-card h3 {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 16px;
+}
+
+.metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.metric-item {
+  background: #f8f9fa;
+  padding: 16px;
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.metric-label {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.metric-value {
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--primary-color);
+}
+
+.metric-raw {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.metrics-formula {
+  padding-top: 16px;
+  border-top: 1px solid #f1f2f3;
+}
+
+.metrics-formula p {
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.8;
+}
+
+/* 评论区域 */
+.comments-section {
+  background: var(--card-bg);
+  padding: 24px;
+  border-radius: 12px;
+  border: 1px solid var(--border-color);
+  box-shadow: var(--shadow-subtle);
+}
+
+.comments-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.comments-header h3 {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.saved-count {
+  font-size: 12px;
+  color: var(--primary-color);
+  background: #e1f5fe;
+  padding: 4px 10px;
+  border-radius: 12px;
+}
+
+.comments-actions {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.action-btn {
+  padding: 10px 20px;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  border: none;
+}
+
+.fetch-btn {
+  background: #ff6b6b;
+  color: white;
+}
+
+.fetch-btn:hover:not(:disabled) {
+  background: #ee5a5a;
+}
+
+.view-btn {
+  background: #f1f2f3;
+  color: var(--text-secondary);
+  border: 1px solid var(--border-color);
+}
+
+.view-btn:hover:not(:disabled) {
+  background: #e9eaeb;
+}
+
+.action-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.fetch-status {
+  padding: 12px;
+  border-radius: 8px;
+  font-size: 14px;
+  margin-bottom: 16px;
+}
+
+.fetch-status.info {
+  background: #e7f5ff;
+  color: #1971c2;
+}
+
+.fetch-status.success {
+  background: #d3f9d8;
+  color: #2b8a3e;
+}
+
+.fetch-status.error {
+  background: #fff1f1;
+  color: #c92a2a;
+}
+
+.comments-list {
+  margin-top: 16px;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.loading-comments,
+.no-comments {
+  text-align: center;
+  color: var(--text-muted);
+  padding: 24px;
+  font-size: 14px;
+}
+
+.comments-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.comments-table th,
+.comments-table td {
+  padding: 12px;
+  text-align: left;
+  border-bottom: 1px solid #f1f2f3;
+}
+
+.comments-table th {
+  background: #f6f7f8;
+  font-weight: 600;
+  color: var(--text-secondary);
+  position: sticky;
+  top: 0;
+}
+
+.comments-table tbody tr:hover {
+  background: #fafbfc;
+}
+
+.col-index {
+  width: 60px;
+  text-align: center;
+  color: var(--text-muted);
+}
+
+.col-content {
+  color: var(--text-primary);
+  line-height: 1.5;
+}
+
 /* 页脚 */
 .footer {
   text-align: center;
@@ -360,6 +704,12 @@ const analyzeVideo = async () => {
 @media (max-width: 640px) {
   .stats-grid {
     grid-template-columns: repeat(2, 1fr);
+  }
+  .metrics-grid {
+    grid-template-columns: 1fr;
+  }
+  .comments-actions {
+    flex-direction: column;
   }
 }
 </style>

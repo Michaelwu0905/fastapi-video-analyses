@@ -96,3 +96,9 @@ frontend/.npm-cache/
 /references
 grad-project.md
 *.pptx
+*.zip
+*.docx
+*.png
+/开题报告
+/开题报告3
+.cursor
