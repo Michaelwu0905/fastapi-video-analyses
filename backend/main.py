@@ -196,6 +196,7 @@ async def fetch_comments(request: CommentRequest):
     print(f"开始爬取评论：bvid={bvid}, aid={aid}")
     
     all_comments = []
+    seen_rpids = set()  # 用于爬虫层去重，避免分页重叠导致重复
     page = 1
     max_pages = 10  # 最多爬取10页，避免请求过多
     
@@ -214,13 +215,17 @@ async def fetch_comments(request: CommentRequest):
                 if not replies:
                     break
                 
-                # 提取评论内容
+                new_count = 0
+                # 提取评论内容，用 rpid（评论唯一ID）去重
                 for reply in replies:
+                    rpid = reply.get("rpid")
                     content = reply.get("content", {}).get("message", "")
-                    if content:
+                    if content and rpid and rpid not in seen_rpids:
+                        seen_rpids.add(rpid)
                         all_comments.append(content)
+                        new_count += 1
                 
-                print(f"已爬取第{page}页，获取{len(replies)}条评论")
+                print(f"已爬取第{page}页，新增{new_count}条评论（本页共{len(replies)}条）")
                 page += 1
             
             # 保存到数据库
