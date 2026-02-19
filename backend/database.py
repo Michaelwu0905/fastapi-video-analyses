@@ -25,6 +25,7 @@ async def init_db():
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 bvid TEXT NOT NULL,
                 content TEXT NOT NULL,
+                sentiment TEXT DEFAULT NULL,
                 UNIQUE(bvid, content)
             )
         """)
@@ -33,6 +34,14 @@ async def init_db():
             CREATE INDEX IF NOT EXISTS idx_bvid ON comments(bvid)
         """)
         await db.commit()
+
+        # 迁移：若表已存在但缺少 sentiment 字段，则补充添加
+        cursor = await db.execute("PRAGMA table_info(comments)")
+        columns = [col[1] for col in await cursor.fetchall()]
+        if "sentiment" not in columns:
+            print("检测到旧版 comments 表缺少 sentiment 字段，正在迁移...")
+            await db.execute("ALTER TABLE comments ADD COLUMN sentiment TEXT DEFAULT NULL")
+            await db.commit()
 
 
 async def save_comments(bvid: str, comments: list[str]):
@@ -50,16 +59,18 @@ async def save_comments(bvid: str, comments: list[str]):
 
 
 async def get_comments(bvid: str) -> list[dict]:
-    """获取指定视频的评论列表"""
+    """获取指定视频的评论列表（含情感标签）"""
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
         cursor = await db.execute(
-            "SELECT id, content FROM comments WHERE bvid = ? ORDER BY id",
+            "SELECT id, content, sentiment FROM comments WHERE bvid = ? ORDER BY id",
             (bvid,)
         )
         rows = await cursor.fetchall()
-        # 返回带有递增索引的评论列表
-        return [{"index": idx + 1, "content": row["content"]} for idx, row in enumerate(rows)]
+        return [
+            {"index": idx + 1, "content": row["content"], "sentiment": row["sentiment"]}
+            for idx, row in enumerate(rows)
+        ]
 
 
 async def get_comment_count(bvid: str) -> int:
@@ -71,3 +82,58 @@ async def get_comment_count(bvid: str) -> int:
         )
         row = await cursor.fetchone()
         return row[0] if row else 0
+
+
+async def get_pending_comments(bvid: str) -> list[dict]:
+    """获取尚未进行情感分析的评论（sentiment IS NULL）"""
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute(
+            "SELECT id, content FROM comments WHERE bvid = ? AND sentiment IS NULL ORDER BY id",
+            (bvid,)
+        )
+        rows = await cursor.fetchall()
+        return [{"id": row["id"], "content": row["content"]} for row in rows]
+
+
+async def update_sentiments(results: list[dict]):
+    """
+    批量更新评论的情感标签。
+    results: [{"id": int, "sentiment": str}, ...]
+    """
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.executemany(
+            "UPDATE comments SET sentiment = ? WHERE id = ?",
+            [(r["sentiment"], r["id"]) for r in results]
+        )
+        await db.commit()
+
+
+async def get_sentiment_stats(bvid: str) -> dict:
+    """
+    统计指定视频的情感分布。
+    返回: {"positive": int, "neutral": int, "negative": int, "pending": int, "total": int}
+    """
+    async with aiosqlite.connect(DB_PATH) as db:
+        cursor = await db.execute(
+            """
+            SELECT
+                COUNT(*) AS total,
+                SUM(CASE WHEN sentiment = 'positive' THEN 1 ELSE 0 END) AS positive,
+                SUM(CASE WHEN sentiment = 'neutral'  THEN 1 ELSE 0 END) AS neutral,
+                SUM(CASE WHEN sentiment = 'negative' THEN 1 ELSE 0 END) AS negative,
+                SUM(CASE WHEN sentiment IS NULL       THEN 1 ELSE 0 END) AS pending
+            FROM comments WHERE bvid = ?
+            """,
+            (bvid,)
+        )
+        row = await cursor.fetchone()
+        if not row or row[0] == 0:
+            return {"total": 0, "positive": 0, "neutral": 0, "negative": 0, "pending": 0}
+        return {
+            "total":    row[0] or 0,
+            "positive": row[1] or 0,
+            "neutral":  row[2] or 0,
+            "negative": row[3] or 0,
+            "pending":  row[4] or 0,
+        }

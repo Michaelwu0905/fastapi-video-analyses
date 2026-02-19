@@ -5,13 +5,39 @@ from contextlib import asynccontextmanager
 import httpx
 import re
 import datetime
+import asyncio
 import sys
 import os
 
 # 确保能找到同目录下的模块
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from database import init_db, save_comments, get_comments, get_comment_count
+from database import (
+    init_db, save_comments, get_comments, get_comment_count,
+    get_pending_comments, update_sentiments, get_sentiment_stats
+)
+from sentiment import analyze_batch_async
+
+
+async def run_sentiment_analysis(bvid: str):
+    """后台情感分析任务：对指定视频的所有待分析评论批量推理并写回数据库"""
+    try:
+        pending = await get_pending_comments(bvid)
+        if not pending:
+            print(f"[情感分析] {bvid} 无待分析评论，跳过。")
+            return
+
+        print(f"[情感分析] 开始分析 {bvid}，共 {len(pending)} 条评论...")
+        texts = [item["content"] for item in pending]
+        ids   = [item["id"]      for item in pending]
+
+        labels = await analyze_batch_async(texts)
+
+        results = [{"id": id_, "sentiment": label} for id_, label in zip(ids, labels)]
+        await update_sentiments(results)
+        print(f"[情感分析] {bvid} 分析完成，共写入 {len(results)} 条标签。")
+    except Exception as e:
+        print(f"[情感分析] {bvid} 分析失败：{e}")
 
 
 @asynccontextmanager
@@ -230,15 +256,19 @@ async def fetch_comments(request: CommentRequest):
             
             # 保存到数据库
             saved_count = await save_comments(bvid, all_comments)
-            
+
+            # 触发后台情感分析任务（不阻塞当前请求）
+            asyncio.create_task(run_sentiment_analysis(bvid))
+            print(f"[情感分析] 已为 {bvid} 启动后台分析任务")
+
             return {
                 "status": "success",
                 "bvid": bvid,
                 "total_fetched": len(all_comments),
                 "saved_count": saved_count,
-                "msg": f"成功爬取并保存{saved_count}条评论"
+                "msg": f"成功爬取并保存{saved_count}条评论，情感分析已在后台启动"
             }
-            
+
         except httpx.RequestError as exc:
             raise HTTPException(status_code=400, detail=f"网络请求错误：{str(exc)}")
         except Exception as exc:
@@ -258,6 +288,47 @@ async def get_video_comments(bvid: str):
         }
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"获取评论失败：{str(exc)}")
+
+
+@app.get("/api/sentiment-status/{bvid}")
+async def get_sentiment_status(bvid: str):
+    """查询情感分析进度"""
+    try:
+        stats = await get_sentiment_stats(bvid)
+        total   = stats["total"]
+        pending = stats["pending"]
+        analyzed = total - pending
+        return {
+            "status": "success",
+            "bvid": bvid,
+            "total": total,
+            "analyzed": analyzed,
+            "finished": (pending == 0 and total > 0),
+        }
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"查询进度失败：{str(exc)}")
+
+
+@app.get("/api/sentiment/{bvid}")
+async def get_sentiment_result(bvid: str):
+    """获取情感分析统计结果与带标签的评论列表"""
+    try:
+        stats    = await get_sentiment_stats(bvid)
+        comments = await get_comments(bvid)
+        return {
+            "status": "success",
+            "bvid": bvid,
+            "stats": {
+                "positive": stats["positive"],
+                "neutral":  stats["neutral"],
+                "negative": stats["negative"],
+                "pending":  stats["pending"],
+                "total":    stats["total"],
+            },
+            "comments": comments,
+        }
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"获取情感结果失败：{str(exc)}")
 
 
 @app.get("/api/health")
