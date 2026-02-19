@@ -143,6 +143,46 @@
           {{ fetchStatus.msg }}
         </div>
 
+        <!-- 情感分析面板 -->
+        <div v-if="sentimentStats" class="sentiment-panel">
+          <div class="sentiment-header">
+            <h4>情感分析（DistilBERT）</h4>
+            <span class="status-badge" :class="{ processing: sentimentStats.pending > 0, done: sentimentStats.pending === 0 }">
+              {{ sentimentStats.pending > 0 ? '分析中...' : '已完成' }}
+            </span>
+          </div>
+
+          <!-- 进度条 -->
+          <div class="progress-container">
+            <div class="progress-bar">
+              <div 
+                class="progress-fill" 
+                :style="{ width: `${(sentimentStats.analyzed / sentimentStats.total) * 100}%` }"
+              ></div>
+            </div>
+            <span class="progress-text">{{ sentimentStats.analyzed }} / {{ sentimentStats.total }}</span>
+          </div>
+
+          <!-- 统计卡片 -->
+          <div class="sentiment-stats">
+            <div class="s-card positive">
+              <span class="emoji">😊</span>
+              <span class="label">正面</span>
+              <span class="count">{{ sentimentStats.positive }}</span>
+            </div>
+            <div class="s-card neutral">
+              <span class="emoji">😐</span>
+              <span class="label">中性</span>
+              <span class="count">{{ sentimentStats.neutral }}</span>
+            </div>
+            <div class="s-card negative">
+              <span class="emoji">😠</span>
+              <span class="label">负面</span>
+              <span class="count">{{ sentimentStats.negative }}</span>
+            </div>
+          </div>
+        </div>
+
         <!-- 评论列表 -->
         <div v-if="showComments" class="comments-list">
           <div v-if="loadingComments" class="loading-comments">
@@ -155,12 +195,19 @@
             <thead>
               <tr>
                 <th class="col-index">序号</th>
+                <th class="col-sentiment">情感</th>
                 <th class="col-content">评论内容</th>
               </tr>
             </thead>
             <tbody>
               <tr v-for="comment in commentsList" :key="comment.index">
                 <td class="col-index">{{ comment.index }}</td>
+                <td class="col-sentiment">
+                  <span v-if="comment.sentiment" :class="['sentiment-tag', comment.sentiment]">
+                    {{ comment.sentiment === 'positive' ? '正面' : (comment.sentiment === 'negative' ? '负面' : '中性') }}
+                  </span>
+                  <span v-else class="sentiment-tag pending">...</span>
+                </td>
                 <td class="col-content">{{ comment.content }}</td>
               </tr>
             </tbody>
@@ -192,22 +239,34 @@ const showComments = ref(false)
 const loadingComments = ref(false)
 const commentsList = ref([])
 
+// 情感分析相关状态
+const sentimentStats = ref(null)
+const sentimentPolling = ref(false)
+const sentimentTimer = ref(null)
+
 const analyzeVideo = async () => {
   if (!videoUrl.value.trim()) return
   
   loading.value = true
   videoInfo.value = null
   errorMsg.value = null
-  // 重置评论状态
+  // 重置评论及情感分析状态
   fetchStatus.value = null
   showComments.value = false
   commentsList.value = []
+  sentimentStats.value = null
+  stopSentimentPolling()
 
   try {
     const response = await axios.post('/api/analyze', {
       url: videoUrl.value
     })
     videoInfo.value = response.data
+    
+    // 如果已有评论，尝试加载情感分析结果
+    if (videoInfo.value.saved_comments_count > 0) {
+      await checkSentimentStatus()
+    }
   } catch (err) {
     if (err.response && err.response.data) {
       errorMsg.value = err.response.data.detail
@@ -224,6 +283,8 @@ const fetchComments = async () => {
   
   fetchingComments.value = true
   fetchStatus.value = { type: 'info', msg: '正在爬取评论，请稍候...' }
+  sentimentStats.value = null
+  stopSentimentPolling()
 
   try {
     const response = await axios.post('/api/fetch-comments', {
@@ -233,9 +294,12 @@ const fetchComments = async () => {
     fetchStatus.value = { type: 'success', msg: response.data.msg }
     // 更新已保存评论数
     videoInfo.value.saved_comments_count = response.data.saved_count
-    // 自动加载评论列表
+    
+    // 爬取完成后，立即显示列表并开启情感分析轮询
     await loadCommentsList()
     showComments.value = true
+    startSentimentPolling()
+    
   } catch (err) {
     if (err.response && err.response.data) {
       fetchStatus.value = { type: 'error', msg: err.response.data.detail }
@@ -252,10 +316,15 @@ const loadCommentsList = async () => {
   
   loadingComments.value = true
   try {
+    // 优先尝试获取带情感标签的列表
+    const response = await axios.get(`/api/sentiment/${videoInfo.value.bvid}`)
+    commentsList.value = response.data.comments
+    sentimentStats.value = response.data.stats
+  } catch (err) {
+    console.warn('获取情感分析结果失败，回退到普通列表', err)
+    // 回退到普通列表
     const response = await axios.get(`/api/comments/${videoInfo.value.bvid}`)
     commentsList.value = response.data.comments
-  } catch (err) {
-    console.error('加载评论失败:', err)
   } finally {
     loadingComments.value = false
   }
@@ -269,6 +338,49 @@ const toggleCommentsList = async () => {
     if (commentsList.value.length === 0) {
       await loadCommentsList()
     }
+  }
+}
+
+// 情感分析轮询逻辑
+const startSentimentPolling = () => {
+  if (sentimentPolling.value) return
+  sentimentPolling.value = true
+  sentimentTimer.value = setInterval(checkSentimentStatus, 3000)
+}
+
+const stopSentimentPolling = () => {
+  sentimentPolling.value = false
+  if (sentimentTimer.value) {
+    clearInterval(sentimentTimer.value)
+    sentimentTimer.value = null
+  }
+}
+
+const checkSentimentStatus = async () => {
+  if (!videoInfo.value) return
+
+  try {
+    // 先查进度
+    const statusRes = await axios.get(`/api/sentiment-status/${videoInfo.value.bvid}`)
+    const { total, analyzed, finished } = statusRes.data
+
+    // 更新统计数据（即时更新进度条）
+    if (!sentimentStats.value) {
+      sentimentStats.value = { total, analyzed, pending: total - analyzed }
+    } else {
+      sentimentStats.value.total = total
+      sentimentStats.value.analyzed = analyzed
+      sentimentStats.value.pending = total - analyzed
+    }
+
+    if (finished) {
+      stopSentimentPolling()
+      // 分析完成，拉取完整结果（含详细统计和标签）
+      await loadCommentsList()
+    }
+  } catch (err) {
+    console.error('轮询情感状态失败:', err)
+    stopSentimentPolling()
   }
 }
 </script>
@@ -699,6 +811,152 @@ const toggleCommentsList = async () => {
 
 @keyframes spin {
   to { transform: rotate(360deg); }
+}
+
+
+/* 情感分析面板 */
+.sentiment-panel {
+  margin-bottom: 24px;
+  padding: 16px;
+  background: #f8f9fa;
+  border-radius: 8px;
+  border: 1px solid #e9ecef;
+}
+
+.sentiment-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.sentiment-header h4 {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.status-badge {
+  font-size: 12px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: #e9ecef;
+  color: var(--text-secondary);
+}
+
+.status-badge.processing {
+  background: #e7f5ff;
+  color: #1971c2;
+  animation: pulse 2s infinite;
+}
+
+.status-badge.done {
+  background: #d3f9d8;
+  color: #2b8a3e;
+}
+
+@keyframes pulse {
+  0% { opacity: 1; }
+  50% { opacity: 0.6; }
+  100% { opacity: 1; }
+}
+
+.progress-container {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.progress-bar {
+  flex: 1;
+  height: 8px;
+  background: #e9ecef;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  background: var(--primary-color);
+  transition: width 0.5s ease;
+}
+
+.progress-text {
+  font-size: 12px;
+  color: var(--text-muted);
+  width: 60px;
+  text-align: right;
+}
+
+/* 统计卡片 */
+.sentiment-stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+
+.s-card {
+  background: white;
+  padding: 12px;
+  border-radius: 8px;
+  border: 1px solid #e9ecef;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.s-card .emoji {
+  font-size: 20px;
+}
+
+.s-card .label {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.s-card .count {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.s-card.positive { border-bottom: 3px solid #40c057; }
+.s-card.neutral { border-bottom: 3px solid #adb5bd; }
+.s-card.negative { border-bottom: 3px solid #fa5252; }
+
+/* 情感标签列 */
+.col-sentiment {
+  width: 80px;
+}
+
+.sentiment-tag {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.sentiment-tag.positive {
+  background: #d3f9d8;
+  color: #2b8a3e;
+}
+
+.sentiment-tag.neutral {
+  background: #f1f3f5;
+  color: #495057;
+}
+
+.sentiment-tag.negative {
+  background: #ffe3e3;
+  color: #c92a2a;
+}
+
+.sentiment-tag.pending {
+  color: #adb5bd;
 }
 
 @media (max-width: 640px) {
