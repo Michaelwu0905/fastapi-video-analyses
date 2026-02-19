@@ -41,11 +41,11 @@ docker-compose down
 #### 1. 启动后端服务
 
 ```bash
-# 进入项目根目录，激活虚拟环境
-.\venv\Scripts\activate
+# 1. 安装依赖（首次运行需要）
+uv sync
 
-# 启动FastAPI服务器
-uvicorn backend.main:app --reload --host 127.0.0.1 --port 8000
+# 2. 启动FastAPI服务器
+uv run uvicorn backend.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
 后端服务将在 http://127.0.0.1:8000 运行
@@ -111,7 +111,10 @@ fastapi-video-analyses/
 ├── backend/
 │   ├── main.py              # FastAPI 后端主程序
 │   ├── Dockerfile           # 后端容器配置
-│   └── requirements.txt     # Python 依赖
+│   ├── database.py          # 数据库逻辑
+│   └── sentiment.py         # 情感分析逻辑
+├── pyproject.toml           # 项目配置与依赖
+├── uv.lock                  # 依赖锁定文件
 ├── frontend/
 │   ├── src/
 │   │   ├── App.vue          # Vue 主组件

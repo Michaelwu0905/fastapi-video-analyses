@@ -1,0 +1,22 @@
+[project]
+name = "fastapi-video-analyses"
+version = "0.1.0"
+description = "B站视频分析系统"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "fastapi==0.127.0",
+    "uvicorn[standard]==0.30.0",
+    "httpx==0.28.1",
+    "pydantic==2.8.0",
+    "aiosqlite==0.20.0",
+    "transformers==4.40.0",
+    "torch==2.3.0",
+    "numpy<2",
+]
+
+[tool.uv]
+dev-dependencies = [
+    "pytest>=8.0.0",
+    "black>=24.0.0",
+]
