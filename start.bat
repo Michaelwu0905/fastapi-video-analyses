@@ -8,7 +8,7 @@ echo.
 cd /d %~dp0
 
 echo [1/2] 正在启动后端服务 (FastAPI)...
-start "FastAPI Backend" cmd /k "cd /d %~dp0 && uv run uvicorn backend.main:app --reload --host 127.0.0.1 --port 8000"
+start "FastAPI Backend" cmd /k "cd /d %~dp0backend && uv run uvicorn main:app --reload --host 127.0.0.1 --port 8000"
 
 echo [2/2] 正在启动前端服务 (Vue)...
 timeout /t 2 >nul

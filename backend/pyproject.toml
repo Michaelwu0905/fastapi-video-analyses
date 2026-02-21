@@ -2,7 +2,6 @@
 name = "fastapi-video-analyses"
 version = "0.1.0"
 description = "B站视频分析系统"
-readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
     "fastapi==0.127.0",
@@ -15,8 +14,8 @@ dependencies = [
     "numpy<2",
 ]
 
-[tool.uv]
-dev-dependencies = [
+[dependency-groups]
+dev = [
     "pytest>=8.0.0",
     "black>=24.0.0",
 ]

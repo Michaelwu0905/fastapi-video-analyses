@@ -41,11 +41,14 @@ docker-compose down
 #### 1. 启动后端服务
 
 ```bash
-# 1. 安装依赖（首次运行需要）
+# 1. 进入后端目录
+cd backend
+
+# 2. 安装依赖（首次运行需要）
 uv sync
 
-# 2. 启动FastAPI服务器
-uv run uvicorn backend.main:app --reload --host 127.0.0.1 --port 8000
+# 2. 启动服务
+uv run uvicorn main:app --reload --host 127.0.0.1 --port 8000
 ```
 
 后端服务将在 http://127.0.0.1:8000 运行
