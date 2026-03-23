@@ -1,0 +1,14 @@
+{
+  "BV1demo4117Kx": {
+    "title": "用 LangChain 做 B 站视频内容识别",
+    "uploader": "Michaelwu0905",
+    "description": "一个演示如何将视频转写、摘要和问答串起来的最小项目。",
+    "transcript_path": "sample_data/sample_video.txt"
+  },
+  "BV1demo7abcQw": {
+    "title": "Kimi 接入视频问答系统",
+    "uploader": "Michaelwu0905",
+    "description": "介绍如何用 .env 配置 Moonshot API Key，并接到 LangChain。",
+    "transcript_path": "sample_data/sample_video.txt"
+  }
+}

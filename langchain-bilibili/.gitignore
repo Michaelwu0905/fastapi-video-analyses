@@ -1,0 +1,7 @@
+.env
+.venv
+__pycache__/
+artifacts/
+.DS_Store
+.pytest_cache/
+.mypy_cache/
