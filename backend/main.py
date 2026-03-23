@@ -2,6 +2,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from contextlib import asynccontextmanager
+from pathlib import Path
 import httpx
 import re
 import datetime
@@ -11,6 +12,9 @@ import os
 
 # 确保能找到同目录下的模块
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+LANGCHAIN_SRC = Path(__file__).resolve().parents[1] / "langchain-bilibili" / "src"
+if str(LANGCHAIN_SRC) not in sys.path:
+    sys.path.insert(0, str(LANGCHAIN_SRC))
 
 from database import (
     init_db, save_comments, get_comments, get_comment_count,
@@ -70,6 +74,18 @@ class CommentRequest(BaseModel):
     aid: int  # 需要aid来调用评论API
 
 
+def build_content_analysis_payload(result: dict) -> dict:
+    """提取前端展示所需的内容分析字段，避免返回过大的中间结果。"""
+    return {
+        "summary": result.get("summary", ""),
+        "summary_mode": result.get("summary_mode", "fallback"),
+        "tags": result.get("tags", []),
+        "tags_mode": result.get("tags_mode", "fallback"),
+        "highlights": result.get("highlights", [])[:3],
+        "source": result.get("source", {}),
+    }
+
+
 # 通用请求头
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -112,6 +128,39 @@ def format_number(num: int) -> str:
     if num >= 10000:
         return f"{num/10000:.1f}万"
     return str(num)
+
+
+@app.post("/api/content-analysis")
+async def analyze_video_content(request: VideoRequest):
+    """分析视频内容，当前阶段优先走本地转写索引与规则回退。"""
+    url = request.url.strip()
+    if not url:
+        raise HTTPException(status_code=400, detail="视频链接不能为空")
+
+    try:
+        from langchain_bilibili.pipeline import run_demo
+
+        result = await asyncio.to_thread(
+            run_demo,
+            url=url,
+            use_llm=False,
+            use_real_bilibili=False,
+        )
+        return {
+            "status": "success",
+            "content_analysis": build_content_analysis_payload(result),
+        }
+    except KeyError:
+        raise HTTPException(
+            status_code=404,
+            detail="当前内容分析仅支持 langchain-bilibili 示例索引中的 BV 号，尚未启用真实转写链路",
+        )
+    except ImportError as exc:
+        raise HTTPException(status_code=500, detail=f"内容分析依赖未安装：{str(exc)}")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=f"内容分析参数错误：{str(exc)}")
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"内容分析失败：{str(exc)}")
 
 
 @app.post("/api/analyze")

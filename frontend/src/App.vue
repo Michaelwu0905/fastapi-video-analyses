@@ -21,6 +21,11 @@
       <VideoInfoCard :info="videoInfo" />
       <StatsGrid :info="videoInfo" />
       <MetricsCard :info="videoInfo" />
+      <ContentAnalysisPanel
+        :analysis="contentAnalysis"
+        :loading="contentAnalysisLoading"
+        :error="contentAnalysisError"
+      />
       <CommentsSection
         :saved-count="videoInfo.saved_comments_count"
         :fetching-comments="fetchingComments"
@@ -44,6 +49,7 @@ import SearchBar       from './components/SearchBar.vue'
 import VideoInfoCard   from './components/VideoInfoCard.vue'
 import StatsGrid       from './components/StatsGrid.vue'
 import MetricsCard     from './components/MetricsCard.vue'
+import ContentAnalysisPanel from './components/ContentAnalysisPanel.vue'
 import CommentsSection from './components/CommentsSection.vue'
 
 import { useVideoAnalysis } from './composables/useVideoAnalysis.js'
@@ -52,7 +58,9 @@ import { useSentiment }     from './composables/useSentiment.js'
 
 // ── composables ──────────────────────────────────────────────
 const {
-  videoUrl, loading, videoInfo, errorMsg, analyzeVideo,
+  videoUrl, loading, videoInfo,
+  contentAnalysis, contentAnalysisLoading, contentAnalysisError,
+  errorMsg, analyzeVideo,
 } = useVideoAnalysis()
 
 const {
