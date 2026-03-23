@@ -2,26 +2,18 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from contextlib import asynccontextmanager
-from pathlib import Path
 from typing import Any
 import httpx
 import re
 import datetime
 import asyncio
-import sys
-import os
-
-# 确保能找到同目录下的模块
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-LANGCHAIN_SRC = Path(__file__).resolve().parents[1] / "langchain-bilibili" / "src"
-if str(LANGCHAIN_SRC) not in sys.path:
-    sys.path.insert(0, str(LANGCHAIN_SRC))
 
 from database import (
     init_db, save_comments, get_comments, get_comment_count,
     get_pending_comments, update_sentiments, get_sentiment_stats
 )
 from sentiment import analyze_batch_async
+from content_analysis.pipeline import run_demo
 
 
 async def run_sentiment_analysis(bvid: str):
@@ -121,8 +113,6 @@ async def run_real_content_analysis_task(bvid: str, url: str):
     )
 
     try:
-        from langchain_bilibili.pipeline import run_demo
-
         result = await asyncio.to_thread(
             run_demo,
             url=url,
@@ -207,8 +197,6 @@ async def analyze_video_content(request: VideoRequest):
         raise HTTPException(status_code=400, detail="视频链接不能为空")
 
     try:
-        from langchain_bilibili.pipeline import run_demo
-
         result = await asyncio.to_thread(
             run_demo,
             url=url,
@@ -222,7 +210,7 @@ async def analyze_video_content(request: VideoRequest):
     except KeyError:
         raise HTTPException(
             status_code=404,
-            detail="当前内容分析仅支持 langchain-bilibili 示例索引中的 BV 号，尚未启用真实转写链路",
+            detail="当前内容分析仅支持后端内置示例索引中的 BV 号，尚未命中真实转写链路",
         )
     except ImportError as exc:
         raise HTTPException(status_code=500, detail=f"内容分析依赖未安装：{str(exc)}")

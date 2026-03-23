@@ -1,140 +1,174 @@
-# B站视频分析系统
+# B站视频传播力与内容分析系统
 
-一个前后端分离的B站视频分析项目，输入B站视频链接即可获取视频的详细信息。
+一个前后端分离的 B 站视频分析项目，输入 B 站视频链接后可以同时查看：
+
+- 视频基础信息与传播力指标
+- 评论抓取与情感分析结果
+- 视频内容摘要、标签与关键片段
+- 对任意视频的真实下载、转写与内容分析任务状态
 
 ## 技术栈
 
-- **后端**: FastAPI + Python 3.11
-- **前端**: Vue 3 + Vite
-- **部署**: Docker + Nginx
-- **HTTP客户端**: httpx (后端) / axios (前端)
+- 后端：FastAPI + Python 3.11
+- 前端：Vue 3 + Vite
+- 内容分析：LangChain + Moonshot 兼容接口 + Whisper
+- 部署：Docker + Nginx
+- HTTP 客户端：httpx / axios
 
-## 功能特点
+## 当前功能
 
-- 支持标准B站视频链接和短链接 (b23.tv)
-- 获取视频标题、简介、时长等基本信息
-- 显示UP主名称和发布时间
-- 展示视频数据统计（播放量、弹幕、点赞、投币、收藏、分享）
-- 简约界面设计，响应式布局
+- 支持标准 B 站视频链接和 `b23.tv` 短链接
+- 获取视频标题、简介、时长、发布时间、UP 主等基础信息
+- 展示播放、弹幕、点赞、投币、收藏、分享等统计指标
+- 计算传播力综合得分与粘性度
+- 爬取评论并进行情感分析
+- 展示视频内容摘要、标签和关键片段
+- 优先使用后端内置样例索引做内容分析
+- 样例索引未命中时，自动切换到真实视频下载与 Whisper 转写链路
+- 前端展示真实内容分析任务的排队、执行、成功和失败状态
 
 ## 快速开始
 
-### 方式一：Docker 部署（推荐）
+### 方式一：Docker 部署
 
 确保已安装 Docker 和 Docker Compose，然后在项目根目录执行：
 
 ```bash
-# 构建并启动容器
 docker-compose up --build
+```
 
-# 后台运行
+后台运行：
+
+```bash
 docker-compose up -d --build
+```
 
-# 停止服务
+停止服务：
+
+```bash
 docker-compose down
 ```
 
-启动后访问 http://localhost 即可使用系统。
+启动后访问 `http://localhost`。
 
 ### 方式二：本地开发
 
-#### 1. 启动后端服务
+#### 1. 启动后端
 
 ```bash
-# 1. 进入后端目录
 cd backend
-
-# 2. 安装依赖（首次运行需要）
 uv sync
-
-# 2. 启动服务
 uv run uvicorn main:app --reload --host 127.0.0.1 --port 8000
 ```
 
-后端服务将在 http://127.0.0.1:8000 运行
+后端运行在 `http://127.0.0.1:8000`。
 
-#### 2. 启动前端服务
+如果你要启用真实视频内容分析，建议额外准备：
+
+- `yt-dlp`
+- `whisper`
+- `ffmpeg`
+
+并在 `backend/.env` 中配置：
+
+```env
+MOONSHOT_API_KEY=your_moonshot_api_key
+MOONSHOT_BASE_URL=https://api.moonshot.cn/v1
+MOONSHOT_MODEL=kimi-k2-0711-preview
+WHISPER_MODEL=base
+WHISPER_LANGUAGE=zh
+```
+
+可直接参考 `backend/.env.example`。
+
+#### 2. 启动前端
 
 ```bash
-# 新开一个终端，进入前端目录
 cd frontend
-
-# 安装依赖（首次运行需要）
 npm install
-
-# 启动开发服务器
 npm run dev
 ```
 
-前端服务将在 http://localhost:3000 运行
+前端运行在 `http://localhost:3000`。
 
-## API 接口
+## 主要接口
 
-### POST /api/analyze
+### `POST /api/analyze`
 
-分析B站视频，获取详细信息
+分析 B 站视频基础信息和传播力指标。
 
-**请求体:**
-```json
-{
-  "url": "https://www.bilibili.com/video/BVxxxxx"
-}
-```
+### `POST /api/fetch-comments`
 
-**响应:**
-```json
-{
-  "status": "success",
-  "bvid": "BV1GJ411x7h7",
-  "title": "视频标题",
-  "author": "UP主名称",
-  "desc": "视频简介",
-  "view": 1234567,
-  "view_formatted": "123.5万",
-  "danmaku": 12345,
-  "like": 54321,
-  "coin": 11111,
-  "favorite": 22222,
-  "share": 3333,
-  "duration": 360,
-  "duration_formatted": "06:00",
-  "pubdate": "2024-01-01 12:00:00",
-  "msg": "成功访问B站视频"
-}
-```
+抓取评论并启动后台情感分析任务。
 
-### GET /api/health
+### `GET /api/comments/{bvid}`
 
-健康检查接口
+获取已保存评论。
+
+### `GET /api/sentiment-status/{bvid}`
+
+查询评论情感分析进度。
+
+### `GET /api/sentiment/{bvid}`
+
+获取情感统计结果与评论列表。
+
+### `POST /api/content-analysis`
+
+优先使用后端内置样例索引进行内容分析，返回摘要、标签和关键片段。
+
+### `POST /api/content-analysis/start-real`
+
+为任意真实 B 站视频启动下载、转写和内容分析任务。
+
+### `GET /api/content-analysis/status/{bvid}`
+
+查询真实内容分析任务状态。
+
+### `GET /api/content-analysis/result/{bvid}`
+
+获取真实内容分析结果。
+
+### `GET /api/health`
+
+健康检查。
 
 ## 项目结构
 
-```
+```text
 fastapi-video-analyses/
 ├── backend/
-│   ├── main.py              # FastAPI 后端主程序
-│   ├── Dockerfile           # 后端容器配置
-│   ├── database.py          # 数据库逻辑
-│   └── sentiment.py         # 情感分析逻辑
-├── pyproject.toml           # 项目配置与依赖
-├── uv.lock                  # 依赖锁定文件
+│   ├── main.py                      # FastAPI 主程序
+│   ├── database.py                  # 评论与情感分析数据存取
+│   ├── sentiment.py                 # 评论情感分析逻辑
+│   ├── content_analysis/            # 视频内容分析模块
+│   │   ├── pipeline.py              # 内容分析主流程
+│   │   ├── loaders.py               # 样例源与真实视频源解析
+│   │   ├── transcribe.py            # 下载与 Whisper 转写
+│   │   ├── llm.py                   # LLM 摘要、问答、标签提取
+│   │   ├── config.py                # 内容分析配置与路径
+│   │   ├── sample_data/             # 内置样例索引与转写文本
+│   │   └── artifacts/               # 下载缓存与转写缓存
+│   ├── .env.example                 # 内容分析环境变量示例
+│   ├── pyproject.toml               # 后端依赖定义
+│   ├── uv.lock                      # 后端锁文件
+│   └── Dockerfile
 ├── frontend/
 │   ├── src/
-│   │   ├── App.vue          # Vue 主组件
-│   │   ├── main.js          # Vue 入口文件
-│   │   └── style.css        # 全局样式
-│   ├── index.html           # HTML 入口
-│   ├── package.json         # 前端依赖配置
-│   ├── vite.config.js       # Vite 配置
-│   ├── Dockerfile           # 前端容器配置
-│   └── nginx.conf           # Nginx 代理配置
-├── docker-compose.yml       # 容器编排配置
-├── venv/                    # Python 虚拟环境
+│   │   ├── App.vue
+│   │   ├── components/
+│   │   └── composables/
+│   ├── package.json
+│   ├── vite.config.js
+│   ├── Dockerfile
+│   └── nginx.conf
+├── docker-compose.yml
 └── README.md
 ```
 
-## 注意事项
+## 说明
 
-1. Docker 部署时前端通过 Nginx 代理访问后端，无需额外配置跨域
-2. 本地开发时需分别启动前后端服务
-3. B站API可能有访问频率限制，请勿过于频繁请求
+1. 当前真实内容分析任务状态保存在内存中，后端重启后不会保留。
+2. `backend/content_analysis/artifacts/` 用于缓存下载音频和转写文本。
+3. Docker 部署时如果要启用真实下载和转写，需要确保镜像内补齐相关系统依赖。
+4. 样例索引模式适合本地快速验证，真实模式更适合实际视频分析。

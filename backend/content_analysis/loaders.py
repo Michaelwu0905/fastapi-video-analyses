@@ -5,10 +5,11 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
+from .config import BASE_DIR
 from .transcribe import download_bilibili_audio, transcribe_with_whisper
 
-DEFAULT_SAMPLE = Path(__file__).resolve().parents[2] / "sample_data" / "sample_video.txt"
-DEFAULT_VIDEO_INDEX = Path(__file__).resolve().parents[2] / "sample_data" / "bilibili_videos.json"
+DEFAULT_SAMPLE = BASE_DIR / "sample_data" / "sample_video.txt"
+DEFAULT_VIDEO_INDEX = BASE_DIR / "sample_data" / "bilibili_videos.json"
 
 
 @dataclass(frozen=True)
@@ -61,7 +62,7 @@ def load_bilibili_source(value: str, index_path: Path = DEFAULT_VIDEO_INDEX) -> 
     record = index[bvid]
     transcript_path = Path(record["transcript_path"])
     if not transcript_path.is_absolute():
-        transcript_path = index_path.parents[1] / transcript_path
+        transcript_path = BASE_DIR / transcript_path
 
     return VideoSource(
         source_type="bilibili",

@@ -6,8 +6,11 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-ENV_FILE = Path(__file__).resolve().parents[2] / ".env"
-ARTIFACTS_DIR = Path(__file__).resolve().parents[2] / "artifacts"
+BASE_DIR = Path(__file__).resolve().parent
+BACKEND_DIR = BASE_DIR.parent
+PROJECT_ENV_FILE = BACKEND_DIR / ".env"
+ROOT_ENV_FILE = BACKEND_DIR.parent / ".env"
+ARTIFACTS_DIR = BASE_DIR / "artifacts"
 DOWNLOADS_DIR = ARTIFACTS_DIR / "downloads"
 TRANSCRIPTS_DIR = ARTIFACTS_DIR / "transcripts"
 
@@ -30,8 +33,13 @@ def ensure_artifact_dirs() -> None:
     TRANSCRIPTS_DIR.mkdir(parents=True, exist_ok=True)
 
 
+def load_project_env() -> None:
+    load_dotenv(ROOT_ENV_FILE)
+    load_dotenv(PROJECT_ENV_FILE)
+
+
 def load_settings() -> MoonshotSettings:
-    load_dotenv(ENV_FILE)
+    load_project_env()
     return MoonshotSettings(
         api_key=os.getenv("MOONSHOT_API_KEY", "").strip(),
         base_url=os.getenv("MOONSHOT_BASE_URL", "https://api.moonshot.cn/v1").strip(),
@@ -40,7 +48,7 @@ def load_settings() -> MoonshotSettings:
 
 
 def load_whisper_settings() -> WhisperSettings:
-    load_dotenv(ENV_FILE)
+    load_project_env()
     return WhisperSettings(
         model=os.getenv("WHISPER_MODEL", "base").strip(),
         language=os.getenv("WHISPER_LANGUAGE", "zh").strip(),
