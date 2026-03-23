@@ -3,6 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Any
 import httpx
 import re
 import datetime
@@ -74,16 +75,84 @@ class CommentRequest(BaseModel):
     aid: int  # 需要aid来调用评论API
 
 
+CONTENT_ANALYSIS_TASKS: dict[str, dict[str, Any]] = {}
+
+
 def build_content_analysis_payload(result: dict) -> dict:
     """提取前端展示所需的内容分析字段，避免返回过大的中间结果。"""
+    source = result.get("source", {}) or {}
     return {
         "summary": result.get("summary", ""),
         "summary_mode": result.get("summary_mode", "fallback"),
         "tags": result.get("tags", []),
         "tags_mode": result.get("tags_mode", "fallback"),
         "highlights": result.get("highlights", [])[:3],
-        "source": result.get("source", {}),
+        "source": {
+            "type": source.get("type", ""),
+            "title": source.get("title", ""),
+            "identifier": source.get("identifier", ""),
+            "uploader": source.get("uploader", ""),
+            "description": source.get("description", ""),
+            "url": source.get("url", ""),
+        },
     }
+
+
+def get_content_analysis_task(bvid: str) -> dict[str, Any]:
+    return CONTENT_ANALYSIS_TASKS.setdefault(
+        bvid,
+        {
+            "status": "idle",
+            "message": "尚未开始内容分析",
+            "content_analysis": None,
+            "error": None,
+        },
+    )
+
+
+async def run_real_content_analysis_task(bvid: str, url: str):
+    task = get_content_analysis_task(bvid)
+    task.update(
+        {
+            "status": "running",
+            "message": "正在下载音频并转写视频内容，这一步可能需要数分钟",
+            "error": None,
+        }
+    )
+
+    try:
+        from langchain_bilibili.pipeline import run_demo
+
+        result = await asyncio.to_thread(
+            run_demo,
+            url=url,
+            use_llm=True,
+            use_real_bilibili=True,
+        )
+        task.update(
+            {
+                "status": "success",
+                "message": "视频内容分析完成",
+                "content_analysis": build_content_analysis_payload(result),
+                "error": None,
+            }
+        )
+    except ImportError as exc:
+        task.update(
+            {
+                "status": "error",
+                "message": "内容分析依赖未安装",
+                "error": str(exc),
+            }
+        )
+    except Exception as exc:
+        task.update(
+            {
+                "status": "error",
+                "message": "真实视频内容分析失败",
+                "error": str(exc),
+            }
+        )
 
 
 # 通用请求头
@@ -161,6 +230,89 @@ async def analyze_video_content(request: VideoRequest):
         raise HTTPException(status_code=400, detail=f"内容分析参数错误：{str(exc)}")
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"内容分析失败：{str(exc)}")
+
+
+@app.post("/api/content-analysis/start-real")
+async def start_real_video_content_analysis(request: VideoRequest):
+    """对任意 B 站视频启动真实下载、转写和内容分析任务。"""
+    url = request.url.strip()
+    if not url:
+        raise HTTPException(status_code=400, detail="视频链接不能为空")
+
+    bvid = extract_bvid(url)
+    if not bvid:
+        raise HTTPException(status_code=400, detail="无法从链接中提取BV号，请检查链接格式")
+
+    task = get_content_analysis_task(bvid)
+    if task["status"] in {"queued", "running"}:
+        return {
+            "status": "accepted",
+            "bvid": bvid,
+            "task_status": task["status"],
+            "message": task["message"],
+        }
+
+    if task["status"] == "success" and task["content_analysis"]:
+        return {
+            "status": "success",
+            "bvid": bvid,
+            "task_status": "success",
+            "message": task["message"],
+            "content_analysis": task["content_analysis"],
+        }
+
+    task.update(
+        {
+            "status": "queued",
+            "message": "已创建真实视频内容分析任务，正在排队执行",
+            "content_analysis": None,
+            "error": None,
+        }
+    )
+    asyncio.create_task(run_real_content_analysis_task(bvid, url))
+    return {
+        "status": "accepted",
+        "bvid": bvid,
+        "task_status": "queued",
+        "message": task["message"],
+    }
+
+
+@app.get("/api/content-analysis/status/{bvid}")
+async def get_video_content_analysis_status(bvid: str):
+    """查询真实视频内容分析任务状态。"""
+    task = CONTENT_ANALYSIS_TASKS.get(bvid)
+    if task is None:
+        raise HTTPException(status_code=404, detail="未找到该视频的内容分析任务")
+
+    return {
+        "status": "success",
+        "bvid": bvid,
+        "task_status": task["status"],
+        "message": task["message"],
+        "finished": task["status"] in {"success", "error"},
+        "error": task["error"],
+    }
+
+
+@app.get("/api/content-analysis/result/{bvid}")
+async def get_video_content_analysis_result(bvid: str):
+    """获取真实视频内容分析结果。"""
+    task = CONTENT_ANALYSIS_TASKS.get(bvid)
+    if task is None:
+        raise HTTPException(status_code=404, detail="未找到该视频的内容分析任务")
+
+    if task["status"] == "success" and task["content_analysis"]:
+        return {
+            "status": "success",
+            "bvid": bvid,
+            "content_analysis": task["content_analysis"],
+        }
+
+    if task["status"] == "error":
+        raise HTTPException(status_code=500, detail=task["error"] or "内容分析失败")
+
+    raise HTTPException(status_code=409, detail="内容分析尚未完成")
 
 
 @app.post("/api/analyze")

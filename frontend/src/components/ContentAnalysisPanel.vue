@@ -5,6 +5,9 @@
       <span v-if="analysis?.summary_mode" class="mode-badge">{{ analysis.summary_mode }}</span>
     </div>
 
+    <div v-if="status?.msg" class="panel-state" :class="status.type">
+      {{ status.msg }}
+    </div>
     <div v-if="loading" class="panel-state">正在生成内容分析结果...</div>
     <div v-else-if="error" class="panel-state error">{{ error }}</div>
     <template v-else-if="analysis">
@@ -43,6 +46,7 @@ defineProps({
   analysis: { type: Object, default: null },
   loading: { type: Boolean, default: false },
   error: { type: String, default: null },
+  status: { type: Object, default: null },
 })
 </script>
 
@@ -85,6 +89,14 @@ defineProps({
 .panel-state.error {
   background: #fff1f1;
   color: #c92a2a;
+}
+.panel-state.info {
+  background: #e7f5ff;
+  color: #1971c2;
+}
+.panel-state.success {
+  background: #d3f9d8;
+  color: #2b8a3e;
 }
 .panel-block {
   display: flex;

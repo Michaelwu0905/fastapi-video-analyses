@@ -25,6 +25,7 @@
         :analysis="contentAnalysis"
         :loading="contentAnalysisLoading"
         :error="contentAnalysisError"
+        :status="contentAnalysisStatus"
       />
       <CommentsSection
         :saved-count="videoInfo.saved_comments_count"
@@ -59,7 +60,7 @@ import { useSentiment }     from './composables/useSentiment.js'
 // ── composables ──────────────────────────────────────────────
 const {
   videoUrl, loading, videoInfo,
-  contentAnalysis, contentAnalysisLoading, contentAnalysisError,
+  contentAnalysis, contentAnalysisLoading, contentAnalysisError, contentAnalysisStatus,
   errorMsg, analyzeVideo,
 } = useVideoAnalysis()
 
