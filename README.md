@@ -26,6 +26,7 @@
 - 优先使用后端内置样例索引做内容分析
 - 样例索引未命中时，自动切换到真实视频下载与 Whisper 转写链路
 - 前端展示真实内容分析任务的排队、执行、成功和失败状态
+- 支持将真实内容分析任务转发到独立 worker 节点执行
 
 ## 快速开始
 
@@ -133,16 +134,36 @@ npm run dev
 
 健康检查。
 
+## 推荐生产部署
+
+当前更推荐的生产拓扑是：
+
+- `volcano`：部署前端和主后端
+- `laptop`：部署内容分析 worker
+
+这样可以把 `yt-dlp + whisper + LangChain` 的重任务从 `4核4G` 的公网服务器上挪开，避免真实转写拖慢主站响应。
+
+部署相关文件位于：
+
+- `deploy/volcano/docker-compose.yml`
+- `deploy/volcano/backend.env.example`
+- `deploy/laptop/worker.env.example`
+- `deploy/laptop/start-worker.sh`
+- `deploy/laptop/bilibili-content-worker.service`
+- `deploy/README.md`
+
 ## 项目结构
 
 ```text
 fastapi-video-analyses/
 ├── backend/
 │   ├── main.py                      # FastAPI 主程序
+│   ├── worker_main.py               # 内容分析 worker 入口
 │   ├── database.py                  # 评论与情感分析数据存取
 │   ├── sentiment.py                 # 评论情感分析逻辑
 │   ├── content_analysis/            # 视频内容分析模块
 │   │   ├── pipeline.py              # 内容分析主流程
+│   │   ├── service.py               # 内容分析任务共享逻辑
 │   │   ├── loaders.py               # 样例源与真实视频源解析
 │   │   ├── transcribe.py            # 下载与 Whisper 转写
 │   │   ├── llm.py                   # LLM 摘要、问答、标签提取
@@ -163,6 +184,9 @@ fastapi-video-analyses/
 │   ├── Dockerfile
 │   └── nginx.conf
 ├── docker-compose.yml
+├── deploy/
+│   ├── volcano/                     # volcano 服务器部署文件
+│   └── laptop/                      # laptop worker 启动文件
 └── README.md
 ```
 
@@ -170,5 +194,6 @@ fastapi-video-analyses/
 
 1. 当前真实内容分析任务状态保存在内存中，后端重启后不会保留。
 2. `backend/content_analysis/artifacts/` 用于缓存下载音频和转写文本。
-3. Docker 部署时如果要启用真实下载和转写，需要确保镜像内补齐相关系统依赖。
-4. 样例索引模式适合本地快速验证，真实模式更适合实际视频分析。
+3. 当设置了 `CONTENT_ANALYSIS_WORKER_URL` 后，主后端会把真实内容分析请求转发到独立 worker。
+4. `CONTENT_ANALYSIS_WORKER_TOKEN` 用于主后端和 worker 之间的简单鉴权，两个节点必须保持一致。
+5. 样例索引模式适合本地快速验证，真实模式更适合实际视频分析。

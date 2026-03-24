@@ -7,6 +7,7 @@ import httpx
 import re
 import datetime
 import asyncio
+import os
 
 from database import (
     init_db, save_comments, get_comments, get_comment_count,
@@ -14,6 +15,11 @@ from database import (
 )
 from sentiment import analyze_batch_async
 from content_analysis.pipeline import run_demo
+from content_analysis.service import (
+    build_content_analysis_payload,
+    get_content_analysis_task,
+    run_real_content_analysis_task,
+)
 
 
 async def run_sentiment_analysis(bvid: str):
@@ -68,81 +74,8 @@ class CommentRequest(BaseModel):
 
 
 CONTENT_ANALYSIS_TASKS: dict[str, dict[str, Any]] = {}
-
-
-def build_content_analysis_payload(result: dict) -> dict:
-    """提取前端展示所需的内容分析字段，避免返回过大的中间结果。"""
-    source = result.get("source", {}) or {}
-    return {
-        "summary": result.get("summary", ""),
-        "summary_mode": result.get("summary_mode", "fallback"),
-        "tags": result.get("tags", []),
-        "tags_mode": result.get("tags_mode", "fallback"),
-        "highlights": result.get("highlights", [])[:3],
-        "source": {
-            "type": source.get("type", ""),
-            "title": source.get("title", ""),
-            "identifier": source.get("identifier", ""),
-            "uploader": source.get("uploader", ""),
-            "description": source.get("description", ""),
-            "url": source.get("url", ""),
-        },
-    }
-
-
-def get_content_analysis_task(bvid: str) -> dict[str, Any]:
-    return CONTENT_ANALYSIS_TASKS.setdefault(
-        bvid,
-        {
-            "status": "idle",
-            "message": "尚未开始内容分析",
-            "content_analysis": None,
-            "error": None,
-        },
-    )
-
-
-async def run_real_content_analysis_task(bvid: str, url: str):
-    task = get_content_analysis_task(bvid)
-    task.update(
-        {
-            "status": "running",
-            "message": "正在下载音频并转写视频内容，这一步可能需要数分钟",
-            "error": None,
-        }
-    )
-
-    try:
-        result = await asyncio.to_thread(
-            run_demo,
-            url=url,
-            use_llm=True,
-            use_real_bilibili=True,
-        )
-        task.update(
-            {
-                "status": "success",
-                "message": "视频内容分析完成",
-                "content_analysis": build_content_analysis_payload(result),
-                "error": None,
-            }
-        )
-    except ImportError as exc:
-        task.update(
-            {
-                "status": "error",
-                "message": "内容分析依赖未安装",
-                "error": str(exc),
-            }
-        )
-    except Exception as exc:
-        task.update(
-            {
-                "status": "error",
-                "message": "真实视频内容分析失败",
-                "error": str(exc),
-            }
-        )
+CONTENT_ANALYSIS_WORKER_URL = os.getenv("CONTENT_ANALYSIS_WORKER_URL", "").strip().rstrip("/")
+CONTENT_ANALYSIS_WORKER_TOKEN = os.getenv("CONTENT_ANALYSIS_WORKER_TOKEN", "").strip()
 
 
 # 通用请求头
@@ -189,6 +122,41 @@ def format_number(num: int) -> str:
     return str(num)
 
 
+def worker_headers() -> dict[str, str]:
+    headers: dict[str, str] = {}
+    if CONTENT_ANALYSIS_WORKER_TOKEN:
+        headers["X-Worker-Token"] = CONTENT_ANALYSIS_WORKER_TOKEN
+    return headers
+
+
+async def call_content_analysis_worker(method: str, path: str, json_body: dict | None = None) -> dict:
+    if not CONTENT_ANALYSIS_WORKER_URL:
+        raise HTTPException(status_code=503, detail="内容分析 worker 未配置")
+
+    url = f"{CONTENT_ANALYSIS_WORKER_URL}{path}"
+    timeout = httpx.Timeout(10.0, read=30.0)
+    async with httpx.AsyncClient(timeout=timeout) as client:
+        try:
+            response = await client.request(
+                method,
+                url,
+                json=json_body,
+                headers=worker_headers(),
+            )
+        except httpx.RequestError as exc:
+            raise HTTPException(status_code=502, detail=f"连接内容分析 worker 失败：{str(exc)}")
+
+    try:
+        payload = response.json()
+    except ValueError:
+        payload = {"detail": response.text or "worker 返回了无效响应"}
+
+    if response.status_code >= 400:
+        raise HTTPException(status_code=response.status_code, detail=payload.get("detail", "worker 请求失败"))
+
+    return payload
+
+
 @app.post("/api/content-analysis")
 async def analyze_video_content(request: VideoRequest):
     """分析视频内容，当前阶段优先走本地转写索引与规则回退。"""
@@ -231,7 +199,14 @@ async def start_real_video_content_analysis(request: VideoRequest):
     if not bvid:
         raise HTTPException(status_code=400, detail="无法从链接中提取BV号，请检查链接格式")
 
-    task = get_content_analysis_task(bvid)
+    if CONTENT_ANALYSIS_WORKER_URL:
+        return await call_content_analysis_worker(
+            "POST",
+            "/worker/content-analysis/start-real",
+            {"url": url},
+        )
+
+    task = get_content_analysis_task(CONTENT_ANALYSIS_TASKS, bvid)
     if task["status"] in {"queued", "running"}:
         return {
             "status": "accepted",
@@ -257,7 +232,7 @@ async def start_real_video_content_analysis(request: VideoRequest):
             "error": None,
         }
     )
-    asyncio.create_task(run_real_content_analysis_task(bvid, url))
+    asyncio.create_task(run_real_content_analysis_task(CONTENT_ANALYSIS_TASKS, bvid, url))
     return {
         "status": "accepted",
         "bvid": bvid,
@@ -269,6 +244,12 @@ async def start_real_video_content_analysis(request: VideoRequest):
 @app.get("/api/content-analysis/status/{bvid}")
 async def get_video_content_analysis_status(bvid: str):
     """查询真实视频内容分析任务状态。"""
+    if CONTENT_ANALYSIS_WORKER_URL:
+        return await call_content_analysis_worker(
+            "GET",
+            f"/worker/content-analysis/status/{bvid}",
+        )
+
     task = CONTENT_ANALYSIS_TASKS.get(bvid)
     if task is None:
         raise HTTPException(status_code=404, detail="未找到该视频的内容分析任务")
@@ -286,6 +267,12 @@ async def get_video_content_analysis_status(bvid: str):
 @app.get("/api/content-analysis/result/{bvid}")
 async def get_video_content_analysis_result(bvid: str):
     """获取真实视频内容分析结果。"""
+    if CONTENT_ANALYSIS_WORKER_URL:
+        return await call_content_analysis_worker(
+            "GET",
+            f"/worker/content-analysis/result/{bvid}",
+        )
+
     task = CONTENT_ANALYSIS_TASKS.get(bvid)
     if task is None:
         raise HTTPException(status_code=404, detail="未找到该视频的内容分析任务")
@@ -523,4 +510,8 @@ async def get_sentiment_result(bvid: str):
 @app.get("/api/health")
 async def health_check():
     """健康检查接口"""
-    return {"status": "ok", "message": "B站视频分析系统运行正常"}
+    return {
+        "status": "ok",
+        "message": "B站视频分析系统运行正常",
+        "content_analysis_worker_configured": bool(CONTENT_ANALYSIS_WORKER_URL),
+    }

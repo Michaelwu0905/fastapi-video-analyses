@@ -1,0 +1,15 @@
+[Unit]
+Description=Bilibili Content Analysis Worker
+After=network.target
+
+[Service]
+Type=simple
+User=mari
+WorkingDirectory=/home/mari/fastapi-video-analyses/backend
+EnvironmentFile=/home/mari/fastapi-video-analyses/deploy/laptop/worker.env
+ExecStart=/home/mari/.local/bin/uv run uvicorn worker_main:app --host 0.0.0.0 --port 8001
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
