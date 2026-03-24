@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .config import BASE_DIR
-from .transcribe import download_bilibili_audio, transcribe_with_whisper
+from .transcribe import download_bilibili_audio, transcribe_audio
 
 DEFAULT_SAMPLE = BASE_DIR / "sample_data" / "sample_video.txt"
 DEFAULT_VIDEO_INDEX = BASE_DIR / "sample_data" / "bilibili_videos.json"
@@ -79,7 +79,7 @@ def resolve_real_bilibili_source(value: str) -> VideoSource:
     bvid = extract_bvid(value)
     url = value if value.startswith("http") else f"https://www.bilibili.com/video/{bvid}"
     audio_path = download_bilibili_audio(url, bvid)
-    transcript_path = transcribe_with_whisper(audio_path, bvid)
+    transcript_path = transcribe_audio(audio_path, bvid)
     return VideoSource(
         source_type="bilibili",
         title=bvid,

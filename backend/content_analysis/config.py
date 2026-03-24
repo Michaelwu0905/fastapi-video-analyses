@@ -23,9 +23,15 @@ class MoonshotSettings:
 
 
 @dataclass(frozen=True)
-class WhisperSettings:
+class TranscriptionSettings:
+    backend: str
     model: str
     language: str
+    faster_whisper_device: str
+    faster_whisper_compute_type: str
+    faster_whisper_model_path: str
+    faster_whisper_download_root: str
+    faster_whisper_local_files_only: bool
 
 
 def ensure_artifact_dirs() -> None:
@@ -47,9 +53,15 @@ def load_settings() -> MoonshotSettings:
     )
 
 
-def load_whisper_settings() -> WhisperSettings:
+def load_transcription_settings() -> TranscriptionSettings:
     load_project_env()
-    return WhisperSettings(
+    return TranscriptionSettings(
+        backend=os.getenv("TRANSCRIBE_BACKEND", "auto").strip(),
         model=os.getenv("WHISPER_MODEL", "base").strip(),
         language=os.getenv("WHISPER_LANGUAGE", "zh").strip(),
+        faster_whisper_device=os.getenv("FASTER_WHISPER_DEVICE", "cuda").strip(),
+        faster_whisper_compute_type=os.getenv("FASTER_WHISPER_COMPUTE_TYPE", "float16").strip(),
+        faster_whisper_model_path=os.getenv("FASTER_WHISPER_MODEL_PATH", "").strip(),
+        faster_whisper_download_root=os.getenv("FASTER_WHISPER_DOWNLOAD_ROOT", "").strip(),
+        faster_whisper_local_files_only=os.getenv("FASTER_WHISPER_LOCAL_FILES_ONLY", "").strip().lower() in {"1", "true", "yes", "on"},
     )
