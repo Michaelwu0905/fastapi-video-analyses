@@ -76,6 +76,8 @@ uv run uvicorn main:app --reload --host 127.0.0.1 --port 8000
 MOONSHOT_API_KEY=your_moonshot_api_key
 MOONSHOT_BASE_URL=https://api.moonshot.cn/v1
 MOONSHOT_MODEL=kimi-k2-0711-preview
+WHISPER_BIN=/your/whisper/path
+YT_DLP_BIN=/your/yt-dlp/path
 WHISPER_MODEL=base
 WHISPER_LANGUAGE=zh
 ```

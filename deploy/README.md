@@ -24,6 +24,13 @@ docker compose up -d --build
 2. 将项目代码拉到笔记本
 3. 复制 `deploy/laptop/worker.env.example` 为 `deploy/laptop/worker.env`
 4. 保证 `CONTENT_ANALYSIS_WORKER_TOKEN` 与 `volcano` 配置一致
+5. 如果 `whisper` 或 `yt-dlp` 不是通过 `PATH` 可直接访问，可在 `worker.env` 中设置：
+
+```env
+WHISPER_BIN=/your/whisper/path
+YT_DLP_BIN=/your/yt-dlp/path
+```
+
 5. 启动：
 
 ```bash
