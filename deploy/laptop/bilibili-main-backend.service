@@ -1,0 +1,15 @@
+[Unit]
+Description=Bilibili Main Backend
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/mari/fastapi-video-analyses/backend
+EnvironmentFile=/home/mari/fastapi-video-analyses/deploy/laptop/main-backend.env
+ExecStart=/home/mari/.local/bin/uv run uvicorn main:app --host 0.0.0.0 --port 8000
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target

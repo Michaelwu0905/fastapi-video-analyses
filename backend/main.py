@@ -1,8 +1,11 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from contextlib import asynccontextmanager
 from typing import Any
+from pathlib import Path
 import httpx
 import re
 import datetime
@@ -76,6 +79,7 @@ class CommentRequest(BaseModel):
 CONTENT_ANALYSIS_TASKS: dict[str, dict[str, Any]] = {}
 CONTENT_ANALYSIS_WORKER_URL = os.getenv("CONTENT_ANALYSIS_WORKER_URL", "").strip().rstrip("/")
 CONTENT_ANALYSIS_WORKER_TOKEN = os.getenv("CONTENT_ANALYSIS_WORKER_TOKEN", "").strip()
+FRONTEND_DIST_DIR = Path(__file__).resolve().parent.parent / "frontend" / "dist"
 
 
 # 通用请求头
@@ -515,3 +519,25 @@ async def health_check():
         "message": "B站视频分析系统运行正常",
         "content_analysis_worker_configured": bool(CONTENT_ANALYSIS_WORKER_URL),
     }
+
+
+if (FRONTEND_DIST_DIR / "assets").exists():
+    app.mount("/assets", StaticFiles(directory=FRONTEND_DIST_DIR / "assets"), name="frontend-assets")
+
+
+if (FRONTEND_DIST_DIR / "index.html").exists():
+    @app.get("/")
+    async def serve_frontend_index():
+        return FileResponse(FRONTEND_DIST_DIR / "index.html")
+
+
+    @app.get("/{full_path:path}")
+    async def serve_frontend_app(full_path: str):
+        if full_path.startswith("api/"):
+            raise HTTPException(status_code=404, detail="接口不存在")
+
+        requested_path = FRONTEND_DIST_DIR / full_path
+        if requested_path.is_file():
+            return FileResponse(requested_path)
+
+        return FileResponse(FRONTEND_DIST_DIR / "index.html")

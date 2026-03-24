@@ -2,8 +2,8 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# 安装 uv
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+# 安装 uv，避免依赖 ghcr.io 镜像
+RUN pip install --no-cache-dir uv
 
 # 复制依赖文件（pyproject.toml 和 uv.lock 现在就在 backend/ 内）
 COPY pyproject.toml uv.lock ./
