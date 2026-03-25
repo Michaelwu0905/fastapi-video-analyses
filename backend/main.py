@@ -127,6 +127,16 @@ def format_number(num: int) -> str:
     return str(num)
 
 
+def safe_div(numerator: float, denominator: float) -> float:
+    if denominator <= 0:
+        return 0.0
+    return numerator / denominator
+
+
+def format_percent(value: float) -> str:
+    return f"{value * 100:.2f}%"
+
+
 def worker_headers() -> dict[str, str]:
     headers: dict[str, str] = {}
     if CONTENT_ANALYSIS_WORKER_TOKEN:
@@ -356,6 +366,7 @@ async def analyze_video(request: VideoRequest):
             
             pubdate_timestamp = video_data.get("pubdate", 0)
             pubdate = datetime.datetime.fromtimestamp(pubdate_timestamp).strftime("%Y-%m-%d %H:%M:%S")
+            age_days = max(1, (datetime.datetime.now() - datetime.datetime.fromtimestamp(pubdate_timestamp)).days + 1)
             
             # 查询已爬取的评论数量
             saved_count = await get_comment_count(bvid)
@@ -375,6 +386,15 @@ async def analyze_video(request: VideoRequest):
             
             # 计算粘性度 (避免除零)
             stickiness = (coin + favorite + share) / view if view > 0 else 0
+            daily_views = view / age_days
+            like_rate = safe_div(like, view)
+            coin_rate = safe_div(coin, view)
+            favorite_rate = safe_div(favorite, view)
+            share_rate = safe_div(share, view)
+            reply_rate = safe_div(reply, view)
+            composite_interaction_rate = safe_div(reply + danmaku, view)
+            recognition_rate = safe_div(coin + favorite + share, view)
+            danmaku_density = safe_div(danmaku, max(video_data.get("duration", 0) / 60, 1))
             
             result = {
                 "status": "success",
@@ -403,12 +423,31 @@ async def analyze_video(request: VideoRequest):
                 "duration": video_data.get("duration", 0),
                 "duration_formatted": format_duration(video_data.get("duration", 0)),
                 "pubdate": pubdate,
+                "age_days": age_days,
                 "saved_comments_count": saved_count,  # 已保存的评论数
                 # 传播力指标
                 "composite_score": round(composite_score, 2),
                 "composite_score_formatted": format_number(round(composite_score, 2)),
                 "stickiness": round(stickiness, 4),
                 "stickiness_percent": f"{stickiness * 100:.2f}%",
+                "daily_views": round(daily_views, 2),
+                "daily_views_formatted": format_number(round(daily_views)),
+                "like_rate": round(like_rate, 6),
+                "like_rate_percent": format_percent(like_rate),
+                "coin_rate": round(coin_rate, 6),
+                "coin_rate_percent": format_percent(coin_rate),
+                "favorite_rate": round(favorite_rate, 6),
+                "favorite_rate_percent": format_percent(favorite_rate),
+                "share_rate": round(share_rate, 6),
+                "share_rate_percent": format_percent(share_rate),
+                "reply_rate": round(reply_rate, 6),
+                "reply_rate_percent": format_percent(reply_rate),
+                "composite_interaction_rate": round(composite_interaction_rate, 6),
+                "composite_interaction_rate_percent": format_percent(composite_interaction_rate),
+                "recognition_rate": round(recognition_rate, 6),
+                "recognition_rate_percent": format_percent(recognition_rate),
+                "danmaku_density": round(danmaku_density, 2),
+                "danmaku_density_formatted": f"{danmaku_density:.2f}条/分钟",
                 "msg": "成功访问B站视频"
             }
             await save_analysis_history(result)
