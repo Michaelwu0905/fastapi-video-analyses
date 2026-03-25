@@ -1,5 +1,6 @@
 import aiosqlite
 import os
+import datetime
 
 # 数据库文件路径
 DB_PATH = os.path.join(os.path.dirname(__file__), "comments.db")
@@ -42,6 +43,152 @@ async def init_db():
             print("检测到旧版 comments 表缺少 sentiment 字段，正在迁移...")
             await db.execute("ALTER TABLE comments ADD COLUMN sentiment TEXT DEFAULT NULL")
             await db.commit()
+
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS analysis_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                bvid TEXT NOT NULL UNIQUE,
+                url TEXT NOT NULL,
+                title TEXT NOT NULL,
+                author TEXT NOT NULL,
+                cover TEXT DEFAULT '',
+                pubdate TEXT DEFAULT '',
+                view_count INTEGER DEFAULT 0,
+                like_count INTEGER DEFAULT 0,
+                saved_comments_count INTEGER DEFAULT 0,
+                composite_score REAL DEFAULT 0,
+                composite_score_formatted TEXT DEFAULT '',
+                stickiness_percent TEXT DEFAULT '',
+                content_summary TEXT DEFAULT '',
+                updated_at TEXT NOT NULL
+            )
+        """)
+        await db.execute("""
+            CREATE INDEX IF NOT EXISTS idx_analysis_history_updated_at
+            ON analysis_history(updated_at DESC)
+        """)
+        await db.commit()
+
+        cursor = await db.execute("PRAGMA table_info(analysis_history)")
+        history_columns = [col[1] for col in await cursor.fetchall()]
+        history_migrations = {
+            "cover": "ALTER TABLE analysis_history ADD COLUMN cover TEXT DEFAULT ''",
+            "pubdate": "ALTER TABLE analysis_history ADD COLUMN pubdate TEXT DEFAULT ''",
+            "view_count": "ALTER TABLE analysis_history ADD COLUMN view_count INTEGER DEFAULT 0",
+            "like_count": "ALTER TABLE analysis_history ADD COLUMN like_count INTEGER DEFAULT 0",
+            "saved_comments_count": "ALTER TABLE analysis_history ADD COLUMN saved_comments_count INTEGER DEFAULT 0",
+            "composite_score": "ALTER TABLE analysis_history ADD COLUMN composite_score REAL DEFAULT 0",
+            "composite_score_formatted": "ALTER TABLE analysis_history ADD COLUMN composite_score_formatted TEXT DEFAULT ''",
+            "stickiness_percent": "ALTER TABLE analysis_history ADD COLUMN stickiness_percent TEXT DEFAULT ''",
+            "content_summary": "ALTER TABLE analysis_history ADD COLUMN content_summary TEXT DEFAULT ''",
+            "updated_at": "ALTER TABLE analysis_history ADD COLUMN updated_at TEXT DEFAULT ''",
+        }
+        for column, sql in history_migrations.items():
+            if column not in history_columns:
+                await db.execute(sql)
+        await db.commit()
+
+
+def _history_timestamp() -> str:
+    return datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+
+
+async def save_analysis_history(video_info: dict, content_summary: str | None = None):
+    """写入或更新分析历史，仅保留最近10条。"""
+    summary = content_summary
+    if summary is None:
+        summary = video_info.get("content_summary", "") or ""
+
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            """
+            INSERT INTO analysis_history (
+                bvid, url, title, author, cover, pubdate,
+                view_count, like_count, saved_comments_count,
+                composite_score, composite_score_formatted, stickiness_percent,
+                content_summary, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(bvid) DO UPDATE SET
+                url = excluded.url,
+                title = excluded.title,
+                author = excluded.author,
+                cover = excluded.cover,
+                pubdate = excluded.pubdate,
+                view_count = excluded.view_count,
+                like_count = excluded.like_count,
+                saved_comments_count = excluded.saved_comments_count,
+                composite_score = excluded.composite_score,
+                composite_score_formatted = excluded.composite_score_formatted,
+                stickiness_percent = excluded.stickiness_percent,
+                content_summary = CASE
+                    WHEN excluded.content_summary != '' THEN excluded.content_summary
+                    ELSE analysis_history.content_summary
+                END,
+                updated_at = excluded.updated_at
+            """,
+            (
+                video_info.get("bvid", ""),
+                video_info.get("url", ""),
+                video_info.get("title", "未知标题"),
+                video_info.get("author", "未知UP主"),
+                video_info.get("cover", ""),
+                video_info.get("pubdate", ""),
+                video_info.get("view", 0),
+                video_info.get("like", 0),
+                video_info.get("saved_comments_count", 0),
+                video_info.get("composite_score", 0),
+                video_info.get("composite_score_formatted", ""),
+                video_info.get("stickiness_percent", ""),
+                summary,
+                _history_timestamp(),
+            ),
+        )
+        await db.execute(
+            """
+            DELETE FROM analysis_history
+            WHERE id NOT IN (
+                SELECT id FROM analysis_history
+                ORDER BY updated_at DESC, id DESC
+                LIMIT 10
+            )
+            """
+        )
+        await db.commit()
+
+
+async def update_analysis_history_summary(bvid: str, content_summary: str):
+    """更新某条历史记录的内容摘要。"""
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            """
+            UPDATE analysis_history
+            SET content_summary = ?, updated_at = ?
+            WHERE bvid = ?
+            """,
+            (content_summary, _history_timestamp(), bvid),
+        )
+        await db.commit()
+
+
+async def get_recent_analysis_history(limit: int = 10) -> list[dict]:
+    """获取最近分析历史。"""
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute(
+            """
+            SELECT
+                bvid, url, title, author, cover, pubdate,
+                view_count, like_count, saved_comments_count,
+                composite_score, composite_score_formatted,
+                stickiness_percent, content_summary, updated_at
+            FROM analysis_history
+            ORDER BY updated_at DESC, id DESC
+            LIMIT ?
+            """,
+            (limit,),
+        )
+        rows = await cursor.fetchall()
+        return [dict(row) for row in rows]
 
 
 async def save_comments(bvid: str, comments: list[str]):

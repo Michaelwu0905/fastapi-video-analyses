@@ -14,7 +14,8 @@ import os
 
 from database import (
     init_db, save_comments, get_comments, get_comment_count,
-    get_pending_comments, update_sentiments, get_sentiment_stats
+    get_pending_comments, update_sentiments, get_sentiment_stats,
+    save_analysis_history, update_analysis_history_summary, get_recent_analysis_history,
 )
 from sentiment import analyze_batch_async
 from content_analysis.pipeline import run_demo
@@ -175,6 +176,12 @@ async def analyze_video_content(request: VideoRequest):
             use_llm=False,
             use_real_bilibili=False,
         )
+        bvid = extract_bvid(url)
+        if bvid:
+            await update_analysis_history_summary(
+                bvid,
+                result.get("summary", ""),
+            )
         return {
             "status": "success",
             "content_analysis": build_content_analysis_payload(result),
@@ -204,11 +211,17 @@ async def start_real_video_content_analysis(request: VideoRequest):
         raise HTTPException(status_code=400, detail="无法从链接中提取BV号，请检查链接格式")
 
     if CONTENT_ANALYSIS_WORKER_URL:
-        return await call_content_analysis_worker(
+        payload = await call_content_analysis_worker(
             "POST",
             "/worker/content-analysis/start-real",
             {"url": url},
         )
+        if payload.get("task_status") == "success" and payload.get("content_analysis"):
+            await update_analysis_history_summary(
+                bvid,
+                payload["content_analysis"].get("summary", ""),
+            )
+        return payload
 
     task = get_content_analysis_task(CONTENT_ANALYSIS_TASKS, bvid)
     if task["status"] in {"queued", "running"}:
@@ -220,6 +233,10 @@ async def start_real_video_content_analysis(request: VideoRequest):
         }
 
     if task["status"] == "success" and task["content_analysis"]:
+        await update_analysis_history_summary(
+            bvid,
+            task["content_analysis"].get("summary", ""),
+        )
         return {
             "status": "success",
             "bvid": bvid,
@@ -272,16 +289,25 @@ async def get_video_content_analysis_status(bvid: str):
 async def get_video_content_analysis_result(bvid: str):
     """获取真实视频内容分析结果。"""
     if CONTENT_ANALYSIS_WORKER_URL:
-        return await call_content_analysis_worker(
+        payload = await call_content_analysis_worker(
             "GET",
             f"/worker/content-analysis/result/{bvid}",
         )
+        await update_analysis_history_summary(
+            bvid,
+            payload["content_analysis"].get("summary", ""),
+        )
+        return payload
 
     task = CONTENT_ANALYSIS_TASKS.get(bvid)
     if task is None:
         raise HTTPException(status_code=404, detail="未找到该视频的内容分析任务")
 
     if task["status"] == "success" and task["content_analysis"]:
+        await update_analysis_history_summary(
+            bvid,
+            task["content_analysis"].get("summary", ""),
+        )
         return {
             "status": "success",
             "bvid": bvid,
@@ -350,9 +376,10 @@ async def analyze_video(request: VideoRequest):
             # 计算粘性度 (避免除零)
             stickiness = (coin + favorite + share) / view if view > 0 else 0
             
-            return {
+            result = {
                 "status": "success",
                 "bvid": bvid,
+                "url": url,
                 "aid": video_data.get("aid", 0),  # 返回aid用于评论爬取
                 "title": video_data.get("title", "未知标题"),
                 "author": owner.get("name", "未知UP主"),
@@ -384,6 +411,8 @@ async def analyze_video(request: VideoRequest):
                 "stickiness_percent": f"{stickiness * 100:.2f}%",
                 "msg": "成功访问B站视频"
             }
+            await save_analysis_history(result)
+            return result
             
         except httpx.RequestError as exc:
             raise HTTPException(status_code=400, detail=f"网络请求错误：{str(exc)}")
@@ -519,6 +548,19 @@ async def health_check():
         "message": "B站视频分析系统运行正常",
         "content_analysis_worker_configured": bool(CONTENT_ANALYSIS_WORKER_URL),
     }
+
+
+@app.get("/api/history")
+async def get_analysis_history():
+    """获取最近10条视频分析历史。"""
+    try:
+        items = await get_recent_analysis_history(limit=10)
+        return {
+            "status": "success",
+            "items": items,
+        }
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"获取分析历史失败：{str(exc)}")
 
 
 if (FRONTEND_DIST_DIR / "assets").exists():

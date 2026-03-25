@@ -1,47 +1,55 @@
 <template>
-  <div class="app-container">
-    <!-- 头部 -->
-    <header class="header">
-      <h1>B站视频分析</h1>
-      <p class="subtitle">输入视频链接获取数据详情</p>
-    </header>
+  <div class="app-shell">
+    <div class="app-container">
+      <!-- 头部 -->
+      <header class="header">
+        <h1>B站视频分析</h1>
+        <p class="subtitle">输入视频链接获取数据详情</p>
+      </header>
 
-    <!-- 搜索区域 -->
-    <SearchBar
-      v-model="videoUrl"
-      :loading="loading"
-      @search="handleAnalyze"
-    />
-
-    <!-- 错误提示 -->
-    <div v-if="errorMsg" class="error-msg">{{ errorMsg }}</div>
-
-    <!-- 结果展示 -->
-    <div v-if="videoInfo" class="result-layout">
-      <VideoInfoCard :info="videoInfo" />
-      <StatsGrid :info="videoInfo" />
-      <MetricsCard :info="videoInfo" />
-      <ContentAnalysisPanel
-        :analysis="contentAnalysis"
-        :loading="contentAnalysisLoading"
-        :error="contentAnalysisError"
-        :status="contentAnalysisStatus"
+      <!-- 搜索区域 -->
+      <SearchBar
+        v-model="videoUrl"
+        :loading="loading"
+        @search="handleAnalyze"
       />
-      <CommentsSection
-        :saved-count="videoInfo.saved_comments_count"
-        :fetching-comments="fetchingComments"
-        :fetch-status="fetchStatus"
-        :show-comments="showComments"
-        :loading-comments="loadingComments"
-        :comments-list="commentsList"
-        :sentiment-stats="sentimentStats"
-        @fetch="handleFetch"
-        @toggle="handleToggle"
-      />
+
+      <!-- 错误提示 -->
+      <div v-if="errorMsg" class="error-msg">{{ errorMsg }}</div>
+
+      <!-- 结果展示 -->
+      <div v-if="videoInfo" class="result-layout">
+        <VideoInfoCard :info="videoInfo" />
+        <StatsGrid :info="videoInfo" />
+        <MetricsCard :info="videoInfo" />
+        <ContentAnalysisPanel
+          :analysis="contentAnalysis"
+          :loading="contentAnalysisLoading"
+          :error="contentAnalysisError"
+          :status="contentAnalysisStatus"
+        />
+        <CommentsSection
+          :saved-count="videoInfo.saved_comments_count"
+          :fetching-comments="fetchingComments"
+          :fetch-status="fetchStatus"
+          :show-comments="showComments"
+          :loading-comments="loadingComments"
+          :comments-list="commentsList"
+          :sentiment-stats="sentimentStats"
+          @fetch="handleFetch"
+          @toggle="handleToggle"
+        />
+      </div>
+
+      <!-- 页脚 -->
+      <footer class="footer">Bilibili Video Analyzer - FastAPI &amp; Vue</footer>
     </div>
 
-    <!-- 页脚 -->
-    <footer class="footer">Bilibili Video Analyzer - FastAPI &amp; Vue</footer>
+    <AnalysisHistoryPanel
+      :items="historyList"
+      :loading="historyLoading"
+      @select="handleSelectHistory"
+    />
   </div>
 </template>
 
@@ -51,6 +59,7 @@ import VideoInfoCard   from './components/VideoInfoCard.vue'
 import StatsGrid       from './components/StatsGrid.vue'
 import MetricsCard     from './components/MetricsCard.vue'
 import ContentAnalysisPanel from './components/ContentAnalysisPanel.vue'
+import AnalysisHistoryPanel from './components/AnalysisHistoryPanel.vue'
 import CommentsSection from './components/CommentsSection.vue'
 
 import { useVideoAnalysis } from './composables/useVideoAnalysis.js'
@@ -61,7 +70,8 @@ import { useSentiment }     from './composables/useSentiment.js'
 const {
   videoUrl, loading, videoInfo,
   contentAnalysis, contentAnalysisLoading, contentAnalysisError, contentAnalysisStatus,
-  errorMsg, analyzeVideo,
+  historyList, historyLoading,
+  errorMsg, analyzeVideo, analyzeHistoryItem,
 } = useVideoAnalysis()
 
 const {
@@ -89,6 +99,11 @@ const handleAnalyze = () => analyzeVideo({
   onHasComments: () => checkSentiment(),
 })
 
+const handleSelectHistory = (item) => analyzeHistoryItem(item, {
+  onReset: () => { resetComments(); resetSentiment() },
+  onHasComments: () => checkSentiment(),
+})
+
 const handleFetch = () => fetchComments({
   videoInfo: videoInfo.value,
   onStatsLoaded: (s) => { sentimentStats.value = s },
@@ -103,7 +118,12 @@ const handleToggle = () => toggleCommentsList({
 </script>
 
 <style scoped>
-.app-container { display: flex; flex-direction: column; gap: 32px; }
+.app-shell {
+  display: flex;
+  align-items: flex-start;
+  gap: 24px;
+}
+.app-container { flex: 1; display: flex; flex-direction: column; gap: 32px; min-width: 0; }
 .header { text-align: center; }
 .header h1 { font-size: 24px; font-weight: 600; color: var(--text-primary); margin-bottom: 8px; }
 .subtitle { font-size: 14px; color: var(--text-secondary); }
@@ -111,4 +131,9 @@ const handleToggle = () => toggleCommentsList({
 .result-layout { display: flex; flex-direction: column; gap: 20px; animation: fadeIn 0.4s ease-out; }
 @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
 .footer { text-align: center; font-size: 12px; color: var(--text-muted); padding: 40px 0; }
+@media (max-width: 1100px) {
+  .app-shell {
+    flex-direction: column;
+  }
+}
 </style>

@@ -1,4 +1,4 @@
-import { ref } from 'vue'
+import { ref, onMounted } from 'vue'
 import axios from 'axios'
 
 export function useVideoAnalysis() {
@@ -11,6 +11,20 @@ export function useVideoAnalysis() {
     const contentAnalysisStatus = ref(null)
     const contentAnalysisTimer = ref(null)
     const errorMsg = ref(null)
+    const historyList = ref([])
+    const historyLoading = ref(false)
+
+    const loadHistory = async () => {
+        historyLoading.value = true
+        try {
+            const { data } = await axios.get('/api/history')
+            historyList.value = data.items ?? []
+        } catch (err) {
+            console.error('加载分析历史失败', err)
+        } finally {
+            historyLoading.value = false
+        }
+    }
 
     const stopContentAnalysisPolling = () => {
         if (contentAnalysisTimer.value) {
@@ -36,6 +50,7 @@ export function useVideoAnalysis() {
             msg: '已完成真实视频内容分析',
         }
         contentAnalysisLoading.value = false
+        await loadHistory()
     }
 
     const startRealContentAnalysisPolling = (bvid) => {
@@ -90,6 +105,7 @@ export function useVideoAnalysis() {
                     type: 'success',
                     msg: '已命中缓存的真实视频内容分析结果',
                 }
+                await loadHistory()
                 return
             }
 
@@ -129,6 +145,7 @@ export function useVideoAnalysis() {
                     type: 'success',
                     msg: '已加载本地索引内容分析结果',
                 }
+                await loadHistory()
             } catch (err) {
                 const detail = err.response?.data?.detail ?? '无法获取视频内容分析结果'
                 if (err.response?.status === 404) {
@@ -149,12 +166,23 @@ export function useVideoAnalysis() {
             if (videoInfo.value.saved_comments_count > 0) {
                 onHasComments?.()
             }
+            await loadHistory()
         } catch (err) {
             errorMsg.value = err.response?.data?.detail ?? '无法连接到后端服务器'
         } finally {
             loading.value = false
         }
     }
+
+    const analyzeHistoryItem = async (item, options = {}) => {
+        if (!item?.url) return
+        videoUrl.value = item.url
+        await analyzeVideo(options)
+    }
+
+    onMounted(() => {
+        loadHistory()
+    })
 
     return {
         videoUrl,
@@ -164,7 +192,10 @@ export function useVideoAnalysis() {
         contentAnalysisLoading,
         contentAnalysisError,
         contentAnalysisStatus,
+        historyList,
+        historyLoading,
         errorMsg,
         analyzeVideo,
+        analyzeHistoryItem,
     }
 }
