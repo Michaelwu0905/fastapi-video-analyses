@@ -22,6 +22,7 @@
 
     <!-- 情感分析面板 -->
     <SentimentPanel v-if="sentimentStats" :stats="sentimentStats" />
+    <KnowledgeEffectPanel v-if="knowledgeEffect" :effect="knowledgeEffect" />
 
     <!-- 评论列表 -->
     <CommentsList v-if="showComments" :comments="commentsList" :loading="loadingComments" />
@@ -30,6 +31,7 @@
 
 <script setup>
 import SentimentPanel from './SentimentPanel.vue'
+import KnowledgeEffectPanel from './KnowledgeEffectPanel.vue'
 import CommentsList from './CommentsList.vue'
 
 defineProps({
@@ -40,6 +42,7 @@ defineProps({
   loadingComments:   { type: Boolean, default: false },
   commentsList:      { type: Array, default: () => [] },
   sentimentStats:    { type: Object, default: null },
+  knowledgeEffect:   { type: Object, default: null },
 })
 defineEmits(['fetch', 'toggle'])
 </script>

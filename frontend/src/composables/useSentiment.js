@@ -3,6 +3,7 @@ import axios from 'axios'
 
 export function useSentiment() {
     const sentimentStats = ref(null)
+    const knowledgeEffect = ref(null)
     const sentimentPolling = ref(false)
     const sentimentTimer = ref(null)
 
@@ -16,6 +17,7 @@ export function useSentiment() {
 
     const reset = () => {
         sentimentStats.value = null
+        knowledgeEffect.value = null
         stopSentimentPolling()
     }
 
@@ -56,6 +58,7 @@ export function useSentiment() {
 
     return {
         sentimentStats,
+        knowledgeEffect,
         sentimentPolling,
         reset,
         buildCheckFn,

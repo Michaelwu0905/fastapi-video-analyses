@@ -89,6 +89,16 @@ HEADERS = {
     "Referer": "https://www.bilibili.com"
 }
 
+COGNITIVE_FEEDBACK_KEYWORDS = [
+    "学到了", "涨知识", "长知识", "看懂了", "懂了", "原来如此",
+    "原来是", "受教了", "科普", "明白了", "了解了",
+]
+
+QUESTION_COMMENT_KEYWORDS = [
+    "为什么", "怎么", "如何", "是不是", "真的吗",
+    "能不能", "有没有", "为啥", "啥意思", "求解释",
+]
+
 
 def extract_bvid(url: str) -> str:
     """从B站URL中提取BV号"""
@@ -135,6 +145,63 @@ def safe_div(numerator: float, denominator: float) -> float:
 
 def format_percent(value: float) -> str:
     return f"{value * 100:.2f}%"
+
+
+def contains_any_keyword(text: str, keywords: list[str]) -> bool:
+    lowered = text.strip().lower()
+    return any(keyword.lower() in lowered for keyword in keywords)
+
+
+def build_knowledge_effect_stats(comments: list[dict], sentiment_stats: dict) -> dict:
+    total = len(comments)
+    if total == 0:
+        return {
+            "cognitive_feedback_count": 0,
+            "cognitive_feedback_ratio": 0,
+            "cognitive_feedback_ratio_percent": "0.00%",
+            "question_comment_count": 0,
+            "question_comment_ratio": 0,
+            "question_comment_ratio_percent": "0.00%",
+            "sentiment_polarization": 0,
+            "sentiment_polarization_percent": "0.00%",
+            "controversy_score": 0,
+            "controversy_score_percent": "0.00%",
+        }
+
+    cognitive_feedback_count = sum(
+        1 for comment in comments
+        if contains_any_keyword(comment.get("content", ""), COGNITIVE_FEEDBACK_KEYWORDS)
+    )
+    question_comment_count = sum(
+        1 for comment in comments
+        if "？" in comment.get("content", "")
+        or "?" in comment.get("content", "")
+        or contains_any_keyword(comment.get("content", ""), QUESTION_COMMENT_KEYWORDS)
+    )
+
+    cognitive_feedback_ratio = safe_div(cognitive_feedback_count, total)
+    question_comment_ratio = safe_div(question_comment_count, total)
+    sentiment_polarization = safe_div(
+        sentiment_stats.get("positive", 0) + sentiment_stats.get("negative", 0),
+        total,
+    )
+    controversy_score = safe_div(
+        min(sentiment_stats.get("positive", 0), sentiment_stats.get("negative", 0)) * 2,
+        total,
+    )
+
+    return {
+        "cognitive_feedback_count": cognitive_feedback_count,
+        "cognitive_feedback_ratio": round(cognitive_feedback_ratio, 6),
+        "cognitive_feedback_ratio_percent": format_percent(cognitive_feedback_ratio),
+        "question_comment_count": question_comment_count,
+        "question_comment_ratio": round(question_comment_ratio, 6),
+        "question_comment_ratio_percent": format_percent(question_comment_ratio),
+        "sentiment_polarization": round(sentiment_polarization, 6),
+        "sentiment_polarization_percent": format_percent(sentiment_polarization),
+        "controversy_score": round(controversy_score, 6),
+        "controversy_score_percent": format_percent(controversy_score),
+    }
 
 
 def worker_headers() -> dict[str, str]:
@@ -563,6 +630,7 @@ async def get_sentiment_result(bvid: str):
     try:
         stats    = await get_sentiment_stats(bvid)
         comments = await get_comments(bvid)
+        knowledge_effect = build_knowledge_effect_stats(comments, stats)
         return {
             "status": "success",
             "bvid": bvid,
@@ -573,6 +641,7 @@ async def get_sentiment_result(bvid: str):
                 "pending":  stats["pending"],
                 "total":    stats["total"],
             },
+            "knowledge_effect": knowledge_effect,
             "comments": comments,
         }
     except Exception as exc:

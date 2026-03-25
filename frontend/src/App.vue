@@ -36,6 +36,7 @@
           :loading-comments="loadingComments"
           :comments-list="commentsList"
           :sentiment-stats="sentimentStats"
+          :knowledge-effect="knowledgeEffect"
           @fetch="handleFetch"
           @toggle="handleToggle"
         />
@@ -75,7 +76,7 @@ const {
 } = useVideoAnalysis()
 
 const {
-  sentimentStats, reset: resetSentiment,
+  sentimentStats, knowledgeEffect, reset: resetSentiment,
   buildCheckFn, startSentimentPolling, stopSentimentPolling,
 } = useSentiment()
 
@@ -90,6 +91,7 @@ const checkSentiment = buildCheckFn({
   onFinished: () => loadCommentsList({
     bvid: videoInfo.value?.bvid,
     onStatsLoaded: (s) => { sentimentStats.value = s },
+    onKnowledgeEffectLoaded: (effect) => { knowledgeEffect.value = effect },
   }),
 })
 
@@ -107,6 +109,7 @@ const handleSelectHistory = (item) => analyzeHistoryItem(item, {
 const handleFetch = () => fetchComments({
   videoInfo: videoInfo.value,
   onStatsLoaded: (s) => { sentimentStats.value = s },
+  onKnowledgeEffectLoaded: (effect) => { knowledgeEffect.value = effect },
   onStartPolling: () => startSentimentPolling(checkSentiment),
   onResetSentiment: resetSentiment,
 })
@@ -114,6 +117,7 @@ const handleFetch = () => fetchComments({
 const handleToggle = () => toggleCommentsList({
   bvid: videoInfo.value?.bvid,
   onStatsLoaded: (s) => { sentimentStats.value = s },
+  onKnowledgeEffectLoaded: (effect) => { knowledgeEffect.value = effect },
 })
 </script>
 
