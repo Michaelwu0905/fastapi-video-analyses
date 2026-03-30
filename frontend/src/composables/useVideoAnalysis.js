@@ -10,6 +10,9 @@ export function useVideoAnalysis() {
     const contentAnalysisError = ref(null)
     const contentAnalysisStatus = ref(null)
     const contentAnalysisTimer = ref(null)
+    const ahpEvaluation = ref(null)
+    const ahpEvaluationLoading = ref(false)
+    const ahpEvaluationError = ref(null)
     const errorMsg = ref(null)
     const historyList = ref([])
     const historyLoading = ref(false)
@@ -39,6 +42,27 @@ export function useVideoAnalysis() {
         contentAnalysisStatus.value = null
         contentAnalysisLoading.value = false
         stopContentAnalysisPolling()
+    }
+
+    const resetAhpEvaluation = () => {
+        ahpEvaluation.value = null
+        ahpEvaluationError.value = null
+        ahpEvaluationLoading.value = false
+    }
+
+    const loadAhpEvaluation = async (bvid) => {
+        if (!bvid) return
+        ahpEvaluationLoading.value = true
+        ahpEvaluationError.value = null
+        try {
+            const { data } = await axios.get(`/api/ahp-evaluation/${bvid}`)
+            ahpEvaluation.value = data.result
+        } catch (err) {
+            ahpEvaluation.value = null
+            ahpEvaluationError.value = err.response?.data?.detail ?? '无法计算 AHP + 熵权法结果'
+        } finally {
+            ahpEvaluationLoading.value = false
+        }
     }
 
     const loadRealContentAnalysisResult = async (bvid) => {
@@ -130,12 +154,14 @@ export function useVideoAnalysis() {
         loading.value = true
         videoInfo.value = null
         resetContentAnalysis()
+        resetAhpEvaluation()
         errorMsg.value = null
         onReset?.()
 
         try {
             const response = await axios.post('/api/analyze', { url: videoUrl.value })
             videoInfo.value = response.data
+            await loadAhpEvaluation(videoInfo.value.bvid)
 
             contentAnalysisLoading.value = true
             try {
@@ -194,8 +220,12 @@ export function useVideoAnalysis() {
         contentAnalysisStatus,
         historyList,
         historyLoading,
+        ahpEvaluation,
+        ahpEvaluationLoading,
+        ahpEvaluationError,
         errorMsg,
         analyzeVideo,
         analyzeHistoryItem,
+        loadAhpEvaluation,
     }
 }

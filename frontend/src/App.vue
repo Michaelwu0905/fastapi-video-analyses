@@ -22,6 +22,11 @@
         <VideoInfoCard :info="videoInfo" />
         <StatsGrid :info="videoInfo" />
         <MetricsCard :info="videoInfo" />
+        <AHPEntropyResultCard
+          :result="ahpEvaluation"
+          :loading="ahpEvaluationLoading"
+          :error="ahpEvaluationError"
+        />
         <ContentAnalysisPanel
           :analysis="contentAnalysis"
           :loading="contentAnalysisLoading"
@@ -59,6 +64,7 @@ import SearchBar       from './components/SearchBar.vue'
 import VideoInfoCard   from './components/VideoInfoCard.vue'
 import StatsGrid       from './components/StatsGrid.vue'
 import MetricsCard     from './components/MetricsCard.vue'
+import AHPEntropyResultCard from './components/AHPEntropyResultCard.vue'
 import ContentAnalysisPanel from './components/ContentAnalysisPanel.vue'
 import AnalysisHistoryPanel from './components/AnalysisHistoryPanel.vue'
 import CommentsSection from './components/CommentsSection.vue'
@@ -71,6 +77,7 @@ import { useSentiment }     from './composables/useSentiment.js'
 const {
   videoUrl, loading, videoInfo,
   contentAnalysis, contentAnalysisLoading, contentAnalysisError, contentAnalysisStatus,
+  ahpEvaluation, ahpEvaluationLoading, ahpEvaluationError, loadAhpEvaluation,
   historyList, historyLoading,
   errorMsg, analyzeVideo, analyzeHistoryItem,
 } = useVideoAnalysis()
@@ -91,7 +98,10 @@ const checkSentiment = buildCheckFn({
   onFinished: () => loadCommentsList({
     bvid: videoInfo.value?.bvid,
     onStatsLoaded: (s) => { sentimentStats.value = s },
-    onKnowledgeEffectLoaded: (effect) => { knowledgeEffect.value = effect },
+    onKnowledgeEffectLoaded: async (effect) => {
+      knowledgeEffect.value = effect
+      await loadAhpEvaluation(videoInfo.value?.bvid)
+    },
   }),
 })
 
@@ -109,7 +119,10 @@ const handleSelectHistory = (item) => analyzeHistoryItem(item, {
 const handleFetch = () => fetchComments({
   videoInfo: videoInfo.value,
   onStatsLoaded: (s) => { sentimentStats.value = s },
-  onKnowledgeEffectLoaded: (effect) => { knowledgeEffect.value = effect },
+  onKnowledgeEffectLoaded: async (effect) => {
+    knowledgeEffect.value = effect
+    await loadAhpEvaluation(videoInfo.value?.bvid)
+  },
   onStartPolling: () => startSentimentPolling(checkSentiment),
   onResetSentiment: resetSentiment,
 })
@@ -117,7 +130,10 @@ const handleFetch = () => fetchComments({
 const handleToggle = () => toggleCommentsList({
   bvid: videoInfo.value?.bvid,
   onStatsLoaded: (s) => { sentimentStats.value = s },
-  onKnowledgeEffectLoaded: (effect) => { knowledgeEffect.value = effect },
+  onKnowledgeEffectLoaded: async (effect) => {
+    knowledgeEffect.value = effect
+    await loadAhpEvaluation(videoInfo.value?.bvid)
+  },
 })
 </script>
 

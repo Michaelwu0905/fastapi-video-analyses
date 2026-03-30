@@ -76,10 +76,29 @@ async def init_db():
             "pubdate": "ALTER TABLE analysis_history ADD COLUMN pubdate TEXT DEFAULT ''",
             "view_count": "ALTER TABLE analysis_history ADD COLUMN view_count INTEGER DEFAULT 0",
             "like_count": "ALTER TABLE analysis_history ADD COLUMN like_count INTEGER DEFAULT 0",
+            "danmaku_count": "ALTER TABLE analysis_history ADD COLUMN danmaku_count INTEGER DEFAULT 0",
+            "coin_count": "ALTER TABLE analysis_history ADD COLUMN coin_count INTEGER DEFAULT 0",
+            "favorite_count": "ALTER TABLE analysis_history ADD COLUMN favorite_count INTEGER DEFAULT 0",
+            "share_count": "ALTER TABLE analysis_history ADD COLUMN share_count INTEGER DEFAULT 0",
+            "reply_count": "ALTER TABLE analysis_history ADD COLUMN reply_count INTEGER DEFAULT 0",
+            "duration_seconds": "ALTER TABLE analysis_history ADD COLUMN duration_seconds INTEGER DEFAULT 0",
+            "age_days": "ALTER TABLE analysis_history ADD COLUMN age_days INTEGER DEFAULT 0",
             "saved_comments_count": "ALTER TABLE analysis_history ADD COLUMN saved_comments_count INTEGER DEFAULT 0",
             "composite_score": "ALTER TABLE analysis_history ADD COLUMN composite_score REAL DEFAULT 0",
             "composite_score_formatted": "ALTER TABLE analysis_history ADD COLUMN composite_score_formatted TEXT DEFAULT ''",
             "stickiness_percent": "ALTER TABLE analysis_history ADD COLUMN stickiness_percent TEXT DEFAULT ''",
+            "daily_views": "ALTER TABLE analysis_history ADD COLUMN daily_views REAL DEFAULT 0",
+            "like_rate": "ALTER TABLE analysis_history ADD COLUMN like_rate REAL DEFAULT 0",
+            "coin_rate": "ALTER TABLE analysis_history ADD COLUMN coin_rate REAL DEFAULT 0",
+            "favorite_rate": "ALTER TABLE analysis_history ADD COLUMN favorite_rate REAL DEFAULT 0",
+            "share_rate": "ALTER TABLE analysis_history ADD COLUMN share_rate REAL DEFAULT 0",
+            "reply_rate": "ALTER TABLE analysis_history ADD COLUMN reply_rate REAL DEFAULT 0",
+            "composite_interaction_rate": "ALTER TABLE analysis_history ADD COLUMN composite_interaction_rate REAL DEFAULT 0",
+            "recognition_rate": "ALTER TABLE analysis_history ADD COLUMN recognition_rate REAL DEFAULT 0",
+            "danmaku_density": "ALTER TABLE analysis_history ADD COLUMN danmaku_density REAL DEFAULT 0",
+            "cognitive_feedback_ratio": "ALTER TABLE analysis_history ADD COLUMN cognitive_feedback_ratio REAL DEFAULT 0",
+            "question_comment_ratio": "ALTER TABLE analysis_history ADD COLUMN question_comment_ratio REAL DEFAULT 0",
+            "sentiment_polarization": "ALTER TABLE analysis_history ADD COLUMN sentiment_polarization REAL DEFAULT 0",
             "content_summary": "ALTER TABLE analysis_history ADD COLUMN content_summary TEXT DEFAULT ''",
             "updated_at": "ALTER TABLE analysis_history ADD COLUMN updated_at TEXT DEFAULT ''",
         }
@@ -104,10 +123,13 @@ async def save_analysis_history(video_info: dict, content_summary: str | None = 
             """
             INSERT INTO analysis_history (
                 bvid, url, title, author, cover, pubdate,
-                view_count, like_count, saved_comments_count,
+                view_count, like_count, danmaku_count, coin_count, favorite_count, share_count,
+                reply_count, duration_seconds, age_days, saved_comments_count,
                 composite_score, composite_score_formatted, stickiness_percent,
+                daily_views, like_rate, coin_rate, favorite_rate, share_rate, reply_rate,
+                composite_interaction_rate, recognition_rate, danmaku_density,
                 content_summary, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(bvid) DO UPDATE SET
                 url = excluded.url,
                 title = excluded.title,
@@ -116,10 +138,26 @@ async def save_analysis_history(video_info: dict, content_summary: str | None = 
                 pubdate = excluded.pubdate,
                 view_count = excluded.view_count,
                 like_count = excluded.like_count,
+                danmaku_count = excluded.danmaku_count,
+                coin_count = excluded.coin_count,
+                favorite_count = excluded.favorite_count,
+                share_count = excluded.share_count,
+                reply_count = excluded.reply_count,
+                duration_seconds = excluded.duration_seconds,
+                age_days = excluded.age_days,
                 saved_comments_count = excluded.saved_comments_count,
                 composite_score = excluded.composite_score,
                 composite_score_formatted = excluded.composite_score_formatted,
                 stickiness_percent = excluded.stickiness_percent,
+                daily_views = excluded.daily_views,
+                like_rate = excluded.like_rate,
+                coin_rate = excluded.coin_rate,
+                favorite_rate = excluded.favorite_rate,
+                share_rate = excluded.share_rate,
+                reply_rate = excluded.reply_rate,
+                composite_interaction_rate = excluded.composite_interaction_rate,
+                recognition_rate = excluded.recognition_rate,
+                danmaku_density = excluded.danmaku_density,
                 content_summary = CASE
                     WHEN excluded.content_summary != '' THEN excluded.content_summary
                     ELSE analysis_history.content_summary
@@ -135,10 +173,26 @@ async def save_analysis_history(video_info: dict, content_summary: str | None = 
                 video_info.get("pubdate", ""),
                 video_info.get("view", 0),
                 video_info.get("like", 0),
+                video_info.get("danmaku", 0),
+                video_info.get("coin", 0),
+                video_info.get("favorite", 0),
+                video_info.get("share", 0),
+                video_info.get("reply", 0),
+                video_info.get("duration", 0),
+                video_info.get("age_days", 0),
                 video_info.get("saved_comments_count", 0),
                 video_info.get("composite_score", 0),
                 video_info.get("composite_score_formatted", ""),
                 video_info.get("stickiness_percent", ""),
+                video_info.get("daily_views", 0),
+                video_info.get("like_rate", 0),
+                video_info.get("coin_rate", 0),
+                video_info.get("favorite_rate", 0),
+                video_info.get("share_rate", 0),
+                video_info.get("reply_rate", 0),
+                video_info.get("composite_interaction_rate", 0),
+                video_info.get("recognition_rate", 0),
+                video_info.get("danmaku_density", 0),
                 summary,
                 _history_timestamp(),
             ),
@@ -170,6 +224,30 @@ async def update_analysis_history_summary(bvid: str, content_summary: str):
         await db.commit()
 
 
+async def update_analysis_history_knowledge_effect(bvid: str, knowledge_effect: dict):
+    """更新某条历史记录的知识传播效果相关指标。"""
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            """
+            UPDATE analysis_history
+            SET
+                cognitive_feedback_ratio = ?,
+                question_comment_ratio = ?,
+                sentiment_polarization = ?,
+                updated_at = ?
+            WHERE bvid = ?
+            """,
+            (
+                knowledge_effect.get("cognitive_feedback_ratio", 0),
+                knowledge_effect.get("question_comment_ratio", 0),
+                knowledge_effect.get("sentiment_polarization", 0),
+                _history_timestamp(),
+                bvid,
+            ),
+        )
+        await db.commit()
+
+
 async def get_recent_analysis_history(limit: int = 10) -> list[dict]:
     """获取最近分析历史。"""
     async with aiosqlite.connect(DB_PATH) as db:
@@ -182,6 +260,34 @@ async def get_recent_analysis_history(limit: int = 10) -> list[dict]:
                 composite_score, composite_score_formatted,
                 stickiness_percent, content_summary, updated_at
             FROM analysis_history
+            ORDER BY updated_at DESC, id DESC
+            LIMIT ?
+            """,
+            (limit,),
+        )
+        rows = await cursor.fetchall()
+        return [dict(row) for row in rows]
+
+
+async def get_analysis_history_item(bvid: str) -> dict | None:
+    """获取单条分析历史。"""
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute(
+            "SELECT * FROM analysis_history WHERE bvid = ?",
+            (bvid,),
+        )
+        row = await cursor.fetchone()
+        return dict(row) if row else None
+
+
+async def get_analysis_history_samples(limit: int = 100) -> list[dict]:
+    """获取用于评价模型计算的历史样本。"""
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute(
+            """
+            SELECT * FROM analysis_history
             ORDER BY updated_at DESC, id DESC
             LIMIT ?
             """,

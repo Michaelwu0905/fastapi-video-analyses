@@ -16,6 +16,7 @@ from database import (
     init_db, save_comments, get_comments, get_comment_count,
     get_pending_comments, update_sentiments, get_sentiment_stats,
     save_analysis_history, update_analysis_history_summary, get_recent_analysis_history,
+    update_analysis_history_knowledge_effect, get_analysis_history_item, get_analysis_history_samples,
 )
 from sentiment import analyze_batch_async
 from content_analysis.pipeline import run_demo
@@ -24,6 +25,7 @@ from content_analysis.service import (
     get_content_analysis_task,
     run_real_content_analysis_task,
 )
+from ahp_entropy import evaluate_video_with_samples
 
 
 async def run_sentiment_analysis(bvid: str):
@@ -631,6 +633,7 @@ async def get_sentiment_result(bvid: str):
         stats    = await get_sentiment_stats(bvid)
         comments = await get_comments(bvid)
         knowledge_effect = build_knowledge_effect_stats(comments, stats)
+        await update_analysis_history_knowledge_effect(bvid, knowledge_effect)
         return {
             "status": "success",
             "bvid": bvid,
@@ -646,6 +649,29 @@ async def get_sentiment_result(bvid: str):
         }
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"获取情感结果失败：{str(exc)}")
+
+
+@app.get("/api/ahp-evaluation/{bvid}")
+async def get_ahp_evaluation_result(bvid: str):
+    """基于历史样本实时计算 AHP + 熵权法综合评价结果。"""
+    try:
+        current_item = await get_analysis_history_item(bvid)
+        if current_item is None:
+            raise HTTPException(status_code=404, detail="未找到该视频的历史分析记录，请先完成视频分析")
+
+        sample_items = await get_analysis_history_samples(limit=100)
+        result = evaluate_video_with_samples(current_item, sample_items, alpha=0.5)
+        return {
+            "status": "success",
+            "bvid": bvid,
+            "result": result,
+        }
+    except HTTPException:
+        raise
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"计算 AHP + 熵权法结果失败：{str(exc)}")
 
 
 @app.get("/api/health")

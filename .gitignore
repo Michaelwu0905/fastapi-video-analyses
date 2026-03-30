@@ -102,3 +102,8 @@ grad-project.md
 /开题报告
 /开题报告3
 .cursor
+
+# ===== Markdown =====
+*.md
+!README.md
+!*/README.md
