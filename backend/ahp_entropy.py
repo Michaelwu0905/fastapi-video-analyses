@@ -83,6 +83,14 @@ INDICATOR_LABELS = {
 ALL_INDICATORS = [name for cfg in CRITERIA.values() for name in cfg["indicators"]]
 
 
+def round4(value: float) -> float:
+    return round(float(value), 4)
+
+
+def round2(value: float) -> float:
+    return round(float(value), 2)
+
+
 def ahp_weights(matrix: np.ndarray) -> tuple[np.ndarray, float, float, float]:
     eigvals, eigvecs = np.linalg.eig(matrix)
     max_idx = int(np.argmax(eigvals.real))
@@ -209,8 +217,11 @@ def evaluate_video_with_samples(
 
     data = np.array([build_metric_row(item) for item in merged_items], dtype=float)
     normalized, entropy, entropy_weight_vector = entropy_weights(data)
+    min_vals = data.min(axis=0)
+    max_vals = data.max(axis=0)
+    ranges = max_vals - min_vals
 
-    criteria_weights, _, global_weights_nested, consistency = build_ahp_weights()
+    criteria_weights, local_weights_nested, global_weights_nested, consistency = build_ahp_weights()
     ahp_weight_vector = flatten_global_weights(global_weights_nested)
     combined_weight_vector = alpha * ahp_weight_vector + (1 - alpha) * entropy_weight_vector
     combined_weight_vector = combined_weight_vector / combined_weight_vector.sum()
@@ -218,61 +229,194 @@ def evaluate_video_with_samples(
     total_scores = normalized @ combined_weight_vector * 100
     current_index = next(idx for idx, item in enumerate(merged_items) if item["bvid"] == current_item["bvid"])
     current_score = float(total_scores[current_index])
+    current_metric_row = build_metric_row(current_item)
 
     criteria_scores: dict[str, float] = {}
+    dimension_formulas: list[dict[str, Any]] = []
     for criterion_name, cfg in CRITERIA.items():
         indices = [ALL_INDICATORS.index(ind) for ind in cfg["indicators"]]
-        weights = np.array([combined_weight_vector[idx] for idx in indices], dtype=float)
-        if not math.isclose(weights.sum(), 0.0):
-            weights = weights / weights.sum()
-        criteria_scores[criterion_name] = float((normalized[current_index, indices] @ weights) * 100)
+        dimension_weights = np.array([combined_weight_vector[idx] for idx in indices], dtype=float)
+        if not math.isclose(dimension_weights.sum(), 0.0):
+            dimension_weights = dimension_weights / dimension_weights.sum()
+        dimension_score = float((normalized[current_index, indices] @ dimension_weights) * 100)
+        criteria_scores[criterion_name] = dimension_score
+
+        items: list[dict[str, Any]] = []
+        term_fragments: list[str] = []
+        for local_idx, global_idx in enumerate(indices):
+            indicator = ALL_INDICATORS[global_idx]
+            normalized_value = float(normalized[current_index, global_idx])
+            dimension_weight = float(dimension_weights[local_idx])
+            items.append({
+                "key": indicator,
+                "name": INDICATOR_LABELS[indicator],
+                "normalized_value": round4(normalized_value),
+                "combined_weight": round4(float(combined_weight_vector[global_idx])),
+                "dimension_weight": round4(dimension_weight),
+                "local_ahp_weight": round4(local_weights_nested[criterion_name][indicator]),
+            })
+            term_fragments.append(f"{round4(normalized_value)} × {round4(dimension_weight)}")
+
+        dimension_formulas.append({
+            "key": criterion_name,
+            "name": cfg["label"],
+            "criteria_weight": round4(criteria_weights[criterion_name]),
+            "score": round2(dimension_score),
+            "formula_text": f"{cfg['label']} = ({' + '.join(term_fragments)}) × 100 = {round2(dimension_score)}",
+            "items": items,
+        })
 
     ranked_indices = np.argsort(-total_scores)
     rank = int(np.where(ranked_indices == current_index)[0][0]) + 1
 
     indicator_rows = []
+    raw_metrics = []
+    normalized_metrics = []
+    weight_metrics = []
+    total_terms: list[dict[str, Any]] = []
+    total_formula_fragments: list[str] = []
     for idx, indicator in enumerate(ALL_INDICATORS):
         contribution = float(normalized[current_index, idx] * combined_weight_vector[idx] * 100)
-        indicator_rows.append({
+        criterion_name = next(
+            name for name, cfg in CRITERIA.items()
+            if indicator in cfg["indicators"]
+        )
+        raw_value = float(current_metric_row[idx])
+        min_value = float(min_vals[idx])
+        max_value = float(max_vals[idx])
+        range_value = float(ranges[idx])
+        normalized_value = float(normalized[current_index, idx])
+        ahp_weight = float(ahp_weight_vector[idx])
+        entropy_weight = float(entropy_weight_vector[idx])
+        combined_weight = float(combined_weight_vector[idx])
+
+        row = {
             "key": indicator,
             "name": INDICATOR_LABELS[indicator],
-            "value": float(build_metric_row(current_item)[idx]),
-            "ahp_weight": float(ahp_weight_vector[idx]),
-            "entropy_weight": float(entropy_weight_vector[idx]),
-            "combined_weight": float(combined_weight_vector[idx]),
+            "value": raw_value,
+            "criterion": criterion_name,
+            "criterion_label": CRITERIA[criterion_name]["label"],
+            "ahp_weight": ahp_weight,
+            "entropy_weight": entropy_weight,
+            "combined_weight": combined_weight,
             "contribution": contribution,
+        }
+        indicator_rows.append(row)
+
+        raw_metrics.append({
+            "key": indicator,
+            "name": INDICATOR_LABELS[indicator],
+            "criterion": criterion_name,
+            "criterion_label": CRITERIA[criterion_name]["label"],
+            "value": round4(raw_value),
         })
 
+        if math.isclose(range_value, 0.0):
+            normalized_formula_text = f"{INDICATOR_LABELS[indicator]}: 样本极差为 0，标准化结果记为 0"
+        else:
+            normalized_formula_text = (
+                f"{INDICATOR_LABELS[indicator]}: ({round4(raw_value)} - {round4(min_value)}) / "
+                f"({round4(max_value)} - {round4(min_value)}) = {round4(normalized_value)}"
+            )
+        normalized_metrics.append({
+            "key": indicator,
+            "name": INDICATOR_LABELS[indicator],
+            "criterion": criterion_name,
+            "criterion_label": CRITERIA[criterion_name]["label"],
+            "raw_value": round4(raw_value),
+            "min_value": round4(min_value),
+            "max_value": round4(max_value),
+            "range_value": round4(range_value),
+            "normalized_value": round4(normalized_value),
+            "formula_text": normalized_formula_text,
+            "is_constant": math.isclose(range_value, 0.0),
+        })
+
+        weight_metrics.append({
+            "key": indicator,
+            "name": INDICATOR_LABELS[indicator],
+            "criterion": criterion_name,
+            "criterion_label": CRITERIA[criterion_name]["label"],
+            "alpha": round4(alpha),
+            "ahp_weight": round4(ahp_weight),
+            "entropy_weight": round4(entropy_weight),
+            "combined_weight": round4(combined_weight),
+            "formula_text": (
+                f"{INDICATOR_LABELS[indicator]}: {round4(alpha)} × {round4(ahp_weight)} + "
+                f"{round4(1 - alpha)} × {round4(entropy_weight)} = {round4(combined_weight)}"
+            ),
+        })
+
+        total_terms.append({
+            "key": indicator,
+            "name": INDICATOR_LABELS[indicator],
+            "criterion": criterion_name,
+            "criterion_label": CRITERIA[criterion_name]["label"],
+            "normalized_value": round4(normalized_value),
+            "combined_weight": round4(combined_weight),
+            "contribution": round2(contribution),
+        })
+        total_formula_fragments.append(
+            f"{round4(normalized_value)} × {round4(combined_weight)} × 100"
+        )
+
     indicator_rows.sort(key=lambda item: item["contribution"], reverse=True)
+    total_terms.sort(key=lambda item: item["contribution"], reverse=True)
+
+    grouped_raw_metrics = {
+        criterion_name: [item for item in raw_metrics if item["criterion"] == criterion_name]
+        for criterion_name in CRITERIA.keys()
+    }
+    grouped_normalized_metrics = {
+        criterion_name: [item for item in normalized_metrics if item["criterion"] == criterion_name]
+        for criterion_name in CRITERIA.keys()
+    }
+    grouped_weight_metrics = {
+        criterion_name: [item for item in weight_metrics if item["criterion"] == criterion_name]
+        for criterion_name in CRITERIA.keys()
+    }
 
     return {
         "status": "success",
-        "total_score": round(current_score, 2),
+        "total_score": round2(current_score),
         "level": score_to_level(current_score),
         "rank": rank,
         "sample_size": len(merged_items),
         "alpha": alpha,
         "dimension_scores": {
-            "breadth": round(criteria_scores["breadth"], 2),
-            "depth": round(criteria_scores["depth"], 2),
-            "recognition": round(criteria_scores["recognition"], 2),
-            "knowledge_effect": round(criteria_scores["knowledge_effect"], 2),
+            "breadth": round2(criteria_scores["breadth"]),
+            "depth": round2(criteria_scores["depth"]),
+            "recognition": round2(criteria_scores["recognition"]),
+            "knowledge_effect": round2(criteria_scores["knowledge_effect"]),
         },
         "criteria_weights": {
-            key: round(value, 4) for key, value in criteria_weights.items()
+            key: round4(value) for key, value in criteria_weights.items()
         },
         "consistency": {
-            key: {name: round(val, 4) for name, val in meta.items()}
+            key: {name: round4(val) for name, val in meta.items()}
             for key, meta in consistency.items()
         },
         "indicator_rows": [
             {
                 **row,
-                "ahp_weight": round(row["ahp_weight"], 4),
-                "entropy_weight": round(row["entropy_weight"], 4),
-                "combined_weight": round(row["combined_weight"], 4),
-                "contribution": round(row["contribution"], 2),
+                "ahp_weight": round4(row["ahp_weight"]),
+                "entropy_weight": round4(row["entropy_weight"]),
+                "combined_weight": round4(row["combined_weight"]),
+                "contribution": round2(row["contribution"]),
             }
             for row in indicator_rows
         ],
+        "formula_view": {
+            "raw_metrics": grouped_raw_metrics,
+            "normalized_metrics": grouped_normalized_metrics,
+            "weight_metrics": grouped_weight_metrics,
+            "dimension_formulas": dimension_formulas,
+            "total_formula": {
+                "terms": total_terms,
+                "formula_text": (
+                    f"综合传播力得分 = {' + '.join(total_formula_fragments)} = {round2(current_score)}"
+                ),
+                "score": round2(current_score),
+            },
+        },
     }

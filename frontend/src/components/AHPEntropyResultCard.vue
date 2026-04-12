@@ -105,6 +105,118 @@
           AHP 反映理论判断，熵权反映样本数据差异度；前端展示的是两者按固定比例组合后的结果。
         </p>
       </details>
+
+      <details class="details-panel formula-panel">
+        <summary>查看完整计算公式过程</summary>
+
+        <section class="detail-block">
+          <h4>1. 原始指标</h4>
+          <div
+            v-for="group in formulaGroups"
+            :key="`raw-${group.key}`"
+            class="formula-group"
+          >
+            <h5>{{ group.label }}</h5>
+            <div class="formula-list">
+              <div
+                v-for="item in rawMetricsByGroup[group.key] || []"
+                :key="`raw-${item.key}`"
+                class="formula-line"
+              >
+                <span class="formula-name">{{ item.name }}</span>
+                <code>{{ item.value }}</code>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="detail-block">
+          <h4>2. 标准化过程</h4>
+          <div
+            v-for="group in formulaGroups"
+            :key="`normalized-${group.key}`"
+            class="formula-group"
+          >
+            <h5>{{ group.label }}</h5>
+            <div class="formula-list">
+              <div
+                v-for="item in normalizedMetricsByGroup[group.key] || []"
+                :key="`normalized-${item.key}`"
+                class="formula-text-block"
+              >
+                <span class="formula-name">{{ item.name }}</span>
+                <code>{{ item.formula_text }}</code>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="detail-block">
+          <h4>3. 组合权重过程</h4>
+          <div
+            v-for="group in formulaGroups"
+            :key="`weight-${group.key}`"
+            class="formula-group"
+          >
+            <h5>{{ group.label }}</h5>
+            <div class="formula-list">
+              <div
+                v-for="item in weightMetricsByGroup[group.key] || []"
+                :key="`weight-${item.key}`"
+                class="formula-text-block"
+              >
+                <span class="formula-name">{{ item.name }}</span>
+                <code>{{ item.formula_text }}</code>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="detail-block">
+          <h4>4. 维度得分过程</h4>
+          <div
+            v-for="dimension in dimensionFormulas"
+            :key="dimension.key"
+            class="formula-group"
+          >
+            <h5>{{ dimension.name }}</h5>
+            <div class="formula-list">
+              <div
+                v-for="item in dimension.items"
+                :key="`dim-${dimension.key}-${item.key}`"
+                class="formula-line"
+              >
+                <span class="formula-name">{{ item.name }}</span>
+                <code>
+                  标准化值 {{ item.normalized_value }} × 维度内权重 {{ item.dimension_weight }}
+                </code>
+              </div>
+            </div>
+            <div class="formula-result">
+              <code>{{ dimension.formula_text }}</code>
+            </div>
+          </div>
+        </section>
+
+        <section class="detail-block">
+          <h4>5. 最终总分过程</h4>
+          <div class="formula-list">
+            <div
+              v-for="term in totalFormulaTerms"
+              :key="`total-${term.key}`"
+              class="formula-line"
+            >
+              <span class="formula-name">{{ term.name }}</span>
+              <code>
+                {{ term.normalized_value }} × {{ term.combined_weight }} × 100 = {{ term.contribution }}
+              </code>
+            </div>
+          </div>
+          <div class="formula-result">
+            <code>{{ totalFormula.formula_text }}</code>
+          </div>
+        </section>
+      </details>
     </template>
   </div>
 </template>
@@ -118,7 +230,20 @@ const props = defineProps({
   error: { type: String, default: null },
 })
 
+const formulaGroups = [
+  { key: 'breadth', label: '传播广度' },
+  { key: 'depth', label: '互动深度' },
+  { key: 'recognition', label: '传播认同' },
+  { key: 'knowledge_effect', label: '知识传播效果' },
+]
+
 const topIndicators = computed(() => (props.result?.indicator_rows ?? []).slice(0, 6))
+const rawMetricsByGroup = computed(() => props.result?.formula_view?.raw_metrics ?? {})
+const normalizedMetricsByGroup = computed(() => props.result?.formula_view?.normalized_metrics ?? {})
+const weightMetricsByGroup = computed(() => props.result?.formula_view?.weight_metrics ?? {})
+const dimensionFormulas = computed(() => props.result?.formula_view?.dimension_formulas ?? [])
+const totalFormula = computed(() => props.result?.formula_view?.total_formula ?? { formula_text: '', terms: [] })
+const totalFormulaTerms = computed(() => totalFormula.value.terms ?? [])
 </script>
 
 <style scoped>
@@ -258,6 +383,9 @@ const topIndicators = computed(() => (props.result?.indicator_rows ?? []).slice(
   border-top: 1px solid #f1f2f3;
   padding-top: 16px;
 }
+.formula-panel {
+  margin-top: -4px;
+}
 .details-panel summary {
   cursor: pointer;
   font-size: 14px;
@@ -274,6 +402,55 @@ const topIndicators = computed(() => (props.result?.indicator_rows ?? []).slice(
   font-size: 13px;
   font-weight: 700;
   color: var(--text-primary);
+}
+.formula-group {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid #edf0f2;
+  border-radius: 12px;
+  background: #fbfcfd;
+}
+.formula-group h5 {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+.formula-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.formula-line,
+.formula-text-block {
+  display: grid;
+  grid-template-columns: 140px minmax(0, 1fr);
+  gap: 12px;
+  align-items: start;
+}
+.formula-name {
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.6;
+}
+.formula-line code,
+.formula-text-block code,
+.formula-result code {
+  display: block;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  font-size: 12px;
+  line-height: 1.7;
+  color: #14532d;
+  background: #f4fbf6;
+  border: 1px solid #d8f3dc;
+  border-radius: 8px;
+  padding: 8px 10px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.formula-result {
+  margin-top: 2px;
 }
 .criteria-grid {
   display: grid;
@@ -327,6 +504,10 @@ const topIndicators = computed(() => (props.result?.indicator_rows ?? []).slice(
   .score-overview,
   .dimension-grid,
   .criteria-grid {
+    grid-template-columns: 1fr;
+  }
+  .formula-line,
+  .formula-text-block {
     grid-template-columns: 1fr;
   }
 }
