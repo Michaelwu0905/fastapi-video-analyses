@@ -81,6 +81,44 @@ INDICATOR_LABELS = {
 }
 
 ALL_INDICATORS = [name for cfg in CRITERIA.values() for name in cfg["indicators"]]
+CRITERIA_SYMBOLS = {
+    "breadth": "B",
+    "depth": "D",
+    "recognition": "R",
+    "knowledge_effect": "K",
+}
+
+METRIC_DEFINITIONS = {
+    "daily_views": r"X_{1} = \frac{V}{A}",
+    "share_rate": r"X_{2} = \frac{S}{V}",
+    "reply_rate": r"X_{3} = \frac{R}{V}",
+    "danmaku_density": r"X_{4} = \frac{D}{T}",
+    "composite_interaction_rate": r"X_{5} = \frac{L + C + F + S + R}{V}",
+    "like_rate": r"X_{6} = \frac{L}{V}",
+    "coin_rate": r"X_{7} = \frac{C}{V}",
+    "favorite_rate": r"X_{8} = \frac{F}{V}",
+    "recognition_rate": r"X_{9} = \frac{L + C + F}{V}",
+    "cognitive_feedback_ratio": r"X_{10} = \frac{N_{cf}}{N_{all}}",
+    "question_comment_ratio": r"X_{11} = \frac{N_q}{N_{all}}",
+    "sentiment_polarization": r"X_{12} = \frac{N_{pos} + N_{neg}}{N_{all}}",
+}
+
+SYMBOL_NOTES = [
+    {"symbol": "V", "label": "播放量", "description": "视频累计播放次数", "field": "view_count"},
+    {"symbol": "L", "label": "点赞量", "description": "视频累计点赞次数", "field": "like_count"},
+    {"symbol": "C", "label": "投币量", "description": "B站用户对视频的累计投币次数", "field": "coin_count"},
+    {"symbol": "F", "label": "收藏量", "description": "视频被用户收藏的次数", "field": "favorite_count"},
+    {"symbol": "S", "label": "分享量", "description": "视频被用户分享的次数", "field": "share_count"},
+    {"symbol": "R", "label": "评论量", "description": "视频评论区的评论数量", "field": "reply_count"},
+    {"symbol": "D", "label": "弹幕量", "description": "视频累计弹幕数量", "field": "danmaku_count"},
+    {"symbol": "T", "label": "视频时长", "description": "视频总时长，单位为秒", "field": "duration_seconds", "unit": "秒"},
+    {"symbol": "A", "label": "存续天数", "description": "视频发布至分析时刻的天数", "field": "age_days", "unit": "天"},
+    {"symbol": "N_cf", "label": "认知反馈评论数", "description": "表达学到了、看懂了等知识获得感的评论数量", "note": "当前历史表未存储原始计数，仅保存认知反馈占比"},
+    {"symbol": "N_q", "label": "问题型评论数", "description": "包含提问、追问、求解释等表达的评论数量", "note": "当前历史表未存储原始计数，仅保存问题型评论占比"},
+    {"symbol": "N_pos", "label": "正向评论数", "description": "情感分析结果为正向的评论数量", "note": "当前历史表未存储原始情感计数，仅保存情感极化度"},
+    {"symbol": "N_neg", "label": "负向评论数", "description": "情感分析结果为负向的评论数量", "note": "当前历史表未存储原始情感计数，仅保存情感极化度"},
+    {"symbol": "N_all", "label": "评论总数", "description": "参与知识传播效果统计的评论总数量", "field": "saved_comments_count"},
+]
 
 
 def round4(value: float) -> float:
@@ -89,6 +127,45 @@ def round4(value: float) -> float:
 
 def round2(value: float) -> float:
     return round(float(value), 2)
+
+
+def latex_num(value: float, digits: int = 4) -> str:
+    rounded = round(float(value), digits)
+    if math.isclose(rounded, 0.0, abs_tol=10 ** (-(digits + 1))):
+        rounded = 0.0
+    return f"{rounded:g}"
+
+
+def latex_matrix(matrix: np.ndarray) -> str:
+    rows = [
+        " & ".join(latex_num(value) for value in row)
+        for row in matrix
+    ]
+    return r"\begin{bmatrix}" + r" \\ ".join(rows) + r"\end{bmatrix}"
+
+
+def latex_vector(values: list[float] | np.ndarray, digits: int = 4) -> str:
+    return r"\begin{bmatrix}" + r" \\ ".join(latex_num(value, digits) for value in values) + r"\end{bmatrix}"
+
+
+def build_symbol_notes(current_item: dict[str, Any]) -> list[dict[str, Any]]:
+    notes: list[dict[str, Any]] = []
+    for note in SYMBOL_NOTES:
+        item = {
+            "symbol": note["symbol"],
+            "label": note["label"],
+            "description": note["description"],
+        }
+        field = note.get("field")
+        if field:
+            value = current_item.get(field, 0) or 0
+            unit = note.get("unit", "")
+            item["value"] = value
+            item["value_label"] = f"{value}{unit}" if unit else str(value)
+        else:
+            item["value_note"] = note.get("note", "当前没有可展示的原始值")
+        notes.append(item)
+    return notes
 
 
 def ahp_weights(matrix: np.ndarray) -> tuple[np.ndarray, float, float, float]:
@@ -375,6 +452,147 @@ def evaluate_video_with_samples(
         criterion_name: [item for item in weight_metrics if item["criterion"] == criterion_name]
         for criterion_name in CRITERIA.keys()
     }
+    criteria_names = list(CRITERIA.keys())
+    criteria_weight_vector = [criteria_weights[name] for name in criteria_names]
+    criteria_consistency = consistency["criteria"]
+    latex_indicator_matrices = []
+    for criterion_name, cfg in CRITERIA.items():
+        criterion_symbol = CRITERIA_SYMBOLS[criterion_name]
+        indicators = cfg["indicators"]
+        local_weights = [local_weights_nested[criterion_name][indicator] for indicator in indicators]
+        latex_indicator_matrices.append({
+            "key": criterion_name,
+            "name": cfg["label"],
+            "indicator_names": [INDICATOR_LABELS[indicator] for indicator in indicators],
+            "matrix": rf"A_{{{criterion_symbol}}} = {latex_matrix(cfg['matrix'])}",
+            "local_weight_vector": rf"w_{{{criterion_symbol}}} = {latex_vector(local_weights)}",
+            "consistency": (
+                rf"CI=\frac{{\lambda_{{max}}-n}}{{n-1}}"
+                rf"=\frac{{{latex_num(consistency[criterion_name]['lambda_max'])}-{len(indicators)}}}{{{max(len(indicators) - 1, 1)}}}"
+                rf"={latex_num(consistency[criterion_name]['ci'])},\quad "
+                rf"CR={latex_num(consistency[criterion_name]['cr'])}"
+            ),
+        })
+
+    latex_metric_definitions = [
+        {
+            "key": indicator,
+            "name": INDICATOR_LABELS[indicator],
+            "formula": METRIC_DEFINITIONS[indicator],
+        }
+        for indicator in ALL_INDICATORS
+    ]
+
+    latex_normalization = []
+    latex_entropy_weights = []
+    latex_combined_weights = []
+    for idx, indicator in enumerate(ALL_INDICATORS):
+        raw_value = current_metric_row[idx]
+        min_value = float(min_vals[idx])
+        max_value = float(max_vals[idx])
+        normalized_value = float(normalized[current_index, idx])
+        if math.isclose(float(ranges[idx]), 0.0):
+            normalization_formula = (
+                rf"z_{{{idx + 1}}}=0,\quad "
+                rf"\max(X_{{{idx + 1}}})-\min(X_{{{idx + 1}}})=0"
+            )
+        else:
+            normalization_formula = (
+                rf"z_{{{idx + 1}}}=\frac{{{latex_num(raw_value)}-{latex_num(min_value)}}}"
+                rf"{{{latex_num(max_value)}-{latex_num(min_value)}}}"
+                rf"={latex_num(normalized_value)}"
+            )
+        latex_normalization.append({
+            "key": indicator,
+            "name": INDICATOR_LABELS[indicator],
+            "formula": normalization_formula,
+        })
+
+        divergence_value = float(1 - entropy[idx])
+        latex_entropy_weights.append({
+            "key": indicator,
+            "name": INDICATOR_LABELS[indicator],
+            "formula": (
+                rf"e_{{{idx + 1}}}={latex_num(float(entropy[idx]))},\quad "
+                rf"d_{{{idx + 1}}}=1-e_{{{idx + 1}}}={latex_num(divergence_value)},\quad "
+                rf"w^E_{{{idx + 1}}}={latex_num(float(entropy_weight_vector[idx]))}"
+            ),
+        })
+
+        latex_combined_weights.append({
+            "key": indicator,
+            "name": INDICATOR_LABELS[indicator],
+            "formula": (
+                rf"w_{{{idx + 1}}}={latex_num(alpha)}\times {latex_num(float(ahp_weight_vector[idx]))}"
+                rf"+{latex_num(1 - alpha)}\times {latex_num(float(entropy_weight_vector[idx]))}"
+                rf"={latex_num(float(combined_weight_vector[idx]))}"
+            ),
+        })
+
+    latex_dimension_scores = []
+    for dimension in dimension_formulas:
+        criterion_symbol = CRITERIA_SYMBOLS[dimension["key"]]
+        terms = []
+        for item in dimension["items"]:
+            terms.append(
+                rf"{latex_num(item['normalized_value'])}\times {latex_num(item['dimension_weight'])}"
+            )
+        latex_dimension_scores.append({
+            "key": dimension["key"],
+            "name": dimension["name"],
+            "formula": rf"S_{{{criterion_symbol}}}=\left({' + '.join(terms)}\right)\times 100={latex_num(dimension['score'], 2)}",
+        })
+
+    total_latex_terms = []
+    contribution_latex_rows = []
+    for idx, indicator in enumerate(ALL_INDICATORS):
+        contribution = float(normalized[current_index, idx] * combined_weight_vector[idx] * 100)
+        total_latex_terms.append(
+            rf"{latex_num(float(normalized[current_index, idx]))}\times {latex_num(float(combined_weight_vector[idx]))}"
+        )
+        contribution_latex_rows.append({
+            "key": indicator,
+            "name": INDICATOR_LABELS[indicator],
+            "formula": (
+                rf"C_{{{idx + 1}}}={latex_num(float(normalized[current_index, idx]))}"
+                rf"\times {latex_num(float(combined_weight_vector[idx]))}\times 100"
+                rf"={latex_num(contribution, 2)}"
+            ),
+        })
+
+    latex_view = {
+        "symbol_notes": build_symbol_notes(current_item),
+        "metric_definitions": latex_metric_definitions,
+        "ahp": {
+            "criteria_matrix": rf"A={latex_matrix(CRITERIA_MATRIX)}",
+            "criteria_weight_vector": rf"w^A_c={latex_vector(criteria_weight_vector)}",
+            "criteria_consistency": (
+                rf"CI=\frac{{\lambda_{{max}}-n}}{{n-1}}"
+                rf"=\frac{{{latex_num(criteria_consistency['lambda_max'])}-4}}{{3}}"
+                rf"={latex_num(criteria_consistency['ci'])},\quad "
+                rf"CR=\frac{{CI}}{{RI}}={latex_num(criteria_consistency['cr'])}"
+            ),
+            "indicator_matrices": latex_indicator_matrices,
+        },
+        "entropy": {
+            "standardization_formula": r"z_{ij}=\frac{x_{ij}-\min(x_j)}{\max(x_j)-\min(x_j)}",
+            "proportion_formula": r"p_{ij}=\frac{z_{ij}}{\sum_{i=1}^{m}z_{ij}}",
+            "entropy_formula": r"e_j=-\frac{1}{\ln m}\sum_{i=1}^{m}p_{ij}\ln p_{ij}",
+            "divergence_formula": r"d_j=1-e_j",
+            "weight_formula": r"w_j^E=\frac{d_j}{\sum_{j=1}^{n}d_j}",
+            "normalization_rows": latex_normalization,
+            "weight_rows": latex_entropy_weights,
+        },
+        "combined_weights": {
+            "formula": r"w_j=\alpha w_j^A+(1-\alpha)w_j^E",
+            "rows": latex_combined_weights,
+        },
+        "dimension_scores": latex_dimension_scores,
+        "total_score": {
+            "formula": rf"S=\left({' + '.join(total_latex_terms)}\right)\times 100={latex_num(current_score, 2)}",
+            "contribution_rows": contribution_latex_rows,
+        },
+    }
 
     return {
         "status": "success",
@@ -418,5 +636,6 @@ def evaluate_video_with_samples(
                 ),
                 "score": round2(current_score),
             },
+            "latex_view": latex_view,
         },
     }

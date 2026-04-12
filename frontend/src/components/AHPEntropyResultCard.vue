@@ -107,7 +107,7 @@
       </details>
 
       <details class="details-panel formula-panel">
-        <summary>查看完整计算公式过程</summary>
+        <summary>查看文本计算明细</summary>
 
         <section class="detail-block">
           <h4>1. 原始指标</h4>
@@ -217,12 +217,143 @@
           </div>
         </section>
       </details>
+
+      <details v-if="latexView" class="details-panel latex-panel">
+        <summary>查看 LaTeX 数学推导过程</summary>
+
+        <section class="detail-block">
+          <h4>1. 指标定义</h4>
+          <div class="symbol-note-grid">
+            <div
+              v-for="note in latexView.symbol_notes"
+              :key="`symbol-${note.symbol}`"
+              class="symbol-note"
+            >
+              <strong>{{ note.symbol }}</strong>
+              <span>{{ note.label }}</span>
+              <small>{{ note.description }}</small>
+              <em v-if="note.value_label">当前值：{{ note.value_label }}</em>
+              <em v-else-if="note.value_note">{{ note.value_note }}</em>
+            </div>
+          </div>
+          <div class="latex-grid">
+            <div
+              v-for="item in latexView.metric_definitions"
+              :key="`latex-metric-${item.key}`"
+              class="latex-item"
+            >
+              <span>{{ item.name }}</span>
+              <LatexFormula :formula="item.formula" />
+            </div>
+          </div>
+        </section>
+
+        <section class="detail-block">
+          <h4>2. AHP 判断矩阵与一致性检验</h4>
+          <div class="latex-step">
+            <span>一级维度判断矩阵</span>
+            <LatexFormula :formula="latexView.ahp.criteria_matrix" />
+            <LatexFormula :formula="latexView.ahp.criteria_weight_vector" />
+            <LatexFormula :formula="latexView.ahp.criteria_consistency" />
+          </div>
+
+          <div
+            v-for="matrix in latexView.ahp.indicator_matrices"
+            :key="`latex-ahp-${matrix.key}`"
+            class="latex-step"
+          >
+            <span>{{ matrix.name }}二级指标判断矩阵</span>
+            <LatexFormula :formula="matrix.matrix" />
+            <LatexFormula :formula="matrix.local_weight_vector" />
+            <LatexFormula :formula="matrix.consistency" />
+          </div>
+        </section>
+
+        <section class="detail-block">
+          <h4>3. 熵权法标准化与客观权重</h4>
+          <div class="latex-step">
+            <span>熵权法通用公式</span>
+            <LatexFormula :formula="latexView.entropy.standardization_formula" />
+            <LatexFormula :formula="latexView.entropy.proportion_formula" />
+            <LatexFormula :formula="latexView.entropy.entropy_formula" />
+            <LatexFormula :formula="latexView.entropy.divergence_formula" />
+            <LatexFormula :formula="latexView.entropy.weight_formula" />
+          </div>
+
+          <div class="latex-two-col">
+            <div
+              v-for="row in latexView.entropy.normalization_rows"
+              :key="`latex-norm-${row.key}`"
+              class="latex-item"
+            >
+              <span>{{ row.name }}标准化</span>
+              <LatexFormula :formula="row.formula" />
+            </div>
+          </div>
+
+          <div class="latex-two-col">
+            <div
+              v-for="row in latexView.entropy.weight_rows"
+              :key="`latex-ew-${row.key}`"
+              class="latex-item"
+            >
+              <span>{{ row.name }}熵权</span>
+              <LatexFormula :formula="row.formula" />
+            </div>
+          </div>
+        </section>
+
+        <section class="detail-block">
+          <h4>4. AHP + 熵权法组合权重</h4>
+          <LatexFormula :formula="latexView.combined_weights.formula" />
+          <div class="latex-two-col">
+            <div
+              v-for="row in latexView.combined_weights.rows"
+              :key="`latex-combined-${row.key}`"
+              class="latex-item"
+            >
+              <span>{{ row.name }}</span>
+              <LatexFormula :formula="row.formula" />
+            </div>
+          </div>
+        </section>
+
+        <section class="detail-block">
+          <h4>5. 四个一级维度得分</h4>
+          <div class="latex-two-col">
+            <div
+              v-for="row in latexView.dimension_scores"
+              :key="`latex-dimension-${row.key}`"
+              class="latex-item"
+            >
+              <span>{{ row.name }}</span>
+              <LatexFormula :formula="row.formula" />
+            </div>
+          </div>
+        </section>
+
+        <section class="detail-block">
+          <h4>6. 最终综合传播力得分</h4>
+          <LatexFormula :formula="latexView.total_score.formula" />
+          <div class="latex-two-col">
+            <div
+              v-for="row in latexView.total_score.contribution_rows"
+              :key="`latex-total-${row.key}`"
+              class="latex-item"
+            >
+              <span>{{ row.name }}贡献值</span>
+              <LatexFormula :formula="row.formula" />
+            </div>
+          </div>
+        </section>
+      </details>
     </template>
   </div>
 </template>
 
 <script setup>
 import { computed } from 'vue'
+import LatexFormula from './LatexFormula.vue'
 
 const props = defineProps({
   result: { type: Object, default: null },
@@ -244,6 +375,7 @@ const weightMetricsByGroup = computed(() => props.result?.formula_view?.weight_m
 const dimensionFormulas = computed(() => props.result?.formula_view?.dimension_formulas ?? [])
 const totalFormula = computed(() => props.result?.formula_view?.total_formula ?? { formula_text: '', terms: [] })
 const totalFormulaTerms = computed(() => totalFormula.value.terms ?? [])
+const latexView = computed(() => props.result?.formula_view?.latex_view ?? null)
 </script>
 
 <style scoped>
@@ -386,6 +518,9 @@ const totalFormulaTerms = computed(() => totalFormula.value.terms ?? [])
 .formula-panel {
   margin-top: -4px;
 }
+.latex-panel {
+  margin-top: -4px;
+}
 .details-panel summary {
   cursor: pointer;
   font-size: 14px;
@@ -452,6 +587,72 @@ const totalFormulaTerms = computed(() => totalFormula.value.terms ?? [])
 .formula-result {
   margin-top: 2px;
 }
+.latex-grid,
+.latex-two-col {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.latex-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.latex-step,
+.latex-item {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid #edf0f2;
+  border-radius: 12px;
+  background: #fbfcfd;
+}
+.latex-step > span,
+.latex-item > span {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-secondary);
+}
+.symbol-note-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+.symbol-note {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 8px;
+  align-items: baseline;
+  padding: 10px 12px;
+  border: 1px solid #edf0f2;
+  border-radius: 10px;
+  background: #fff;
+}
+.symbol-note strong {
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  font-size: 13px;
+  color: var(--primary-color);
+}
+.symbol-note span {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+.symbol-note small {
+  grid-column: 1 / -1;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
+.symbol-note em {
+  grid-column: 1 / -1;
+  font-style: normal;
+  color: #0f766e;
+  font-size: 11px;
+  line-height: 1.5;
+  background: #e6fffb;
+  border-radius: 6px;
+  padding: 5px 7px;
+}
 .criteria-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -507,7 +708,10 @@ const totalFormulaTerms = computed(() => totalFormula.value.terms ?? [])
     grid-template-columns: 1fr;
   }
   .formula-line,
-  .formula-text-block {
+  .formula-text-block,
+  .latex-grid,
+  .latex-two-col,
+  .symbol-note-grid {
     grid-template-columns: 1fr;
   }
 }
