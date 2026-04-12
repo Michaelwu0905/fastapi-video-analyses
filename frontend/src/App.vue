@@ -35,6 +35,7 @@
         />
         <CommentsSection
           :saved-count="videoInfo.saved_comments_count"
+          v-model:max-comments="maxComments"
           :fetching-comments="fetchingComments"
           :fetch-status="fetchStatus"
           :show-comments="showComments"
@@ -89,6 +90,7 @@ const {
 
 const {
   fetchingComments, fetchStatus, showComments, loadingComments, commentsList,
+  maxComments,
   reset: resetComments, loadCommentsList, fetchComments, toggleCommentsList,
 } = useComments()
 

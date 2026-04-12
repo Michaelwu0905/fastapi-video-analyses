@@ -7,6 +7,7 @@ export function useComments() {
     const showComments = ref(false)
     const loadingComments = ref(false)
     const commentsList = ref([])
+    const maxComments = ref(200)
 
     const reset = () => {
         fetchStatus.value = null
@@ -36,16 +37,22 @@ export function useComments() {
     const fetchComments = async ({ videoInfo, onStatsLoaded, onKnowledgeEffectLoaded, onStartPolling, onResetSentiment }) => {
         if (!videoInfo) return
 
+        const requestedMaxComments = Math.min(Math.max(Number(maxComments.value) || 200, 20), 5000)
+        maxComments.value = requestedMaxComments
         fetchingComments.value = true
-        fetchStatus.value = { type: 'info', msg: '正在爬取评论，请稍候...' }
+        fetchStatus.value = { type: 'info', msg: `正在按最大抓取数采集一级评论，最多 ${requestedMaxComments} 条，请稍候...` }
         onResetSentiment?.()
 
         try {
             const response = await axios.post('/api/fetch-comments', {
                 bvid: videoInfo.bvid,
                 aid: videoInfo.aid,
+                max_comments: requestedMaxComments,
             })
-            fetchStatus.value = { type: 'success', msg: response.data.msg }
+            fetchStatus.value = {
+                type: 'success',
+                msg: `最多请求 ${response.data.effective_max_comments} 条，实际抓取 ${response.data.total_fetched} 条，保存 ${response.data.saved_count} 条；${response.data.stopped_reason}`,
+            }
             videoInfo.saved_comments_count = response.data.saved_count
 
             await loadCommentsList({ bvid: videoInfo.bvid, onStatsLoaded, onKnowledgeEffectLoaded })
@@ -78,6 +85,7 @@ export function useComments() {
         showComments,
         loadingComments,
         commentsList,
+        maxComments,
         reset,
         loadCommentsList,
         fetchComments,

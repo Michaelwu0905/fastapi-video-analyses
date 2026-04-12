@@ -6,6 +6,18 @@
     </div>
 
     <div class="comments-actions">
+      <label class="max-comments-control">
+        <span>最大抓取数</span>
+        <input
+          :value="maxComments"
+          type="number"
+          min="20"
+          max="5000"
+          step="20"
+          :disabled="fetchingComments"
+          @input="$emit('update:maxComments', Number($event.target.value))"
+        />
+      </label>
       <button class="action-btn fetch-btn" @click="$emit('fetch')" :disabled="fetchingComments">
         <span v-if="fetchingComments" class="spinner"></span>
         <span v-else>爬取评论</span>
@@ -36,6 +48,7 @@ import CommentsList from './CommentsList.vue'
 
 defineProps({
   savedCount:        { type: Number, default: 0 },
+  maxComments:       { type: Number, default: 200 },
   fetchingComments:  { type: Boolean, default: false },
   fetchStatus:       { type: Object, default: null },
   showComments:      { type: Boolean, default: false },
@@ -44,7 +57,7 @@ defineProps({
   sentimentStats:    { type: Object, default: null },
   knowledgeEffect:   { type: Object, default: null },
 })
-defineEmits(['fetch', 'toggle'])
+defineEmits(['fetch', 'toggle', 'update:maxComments'])
 </script>
 
 <style scoped>
@@ -58,7 +71,28 @@ defineEmits(['fetch', 'toggle'])
 .comments-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
 .comments-header h3 { font-size: 16px; font-weight: 600; color: var(--text-primary); }
 .saved-count { font-size: 12px; color: var(--primary-color); background: #e1f5fe; padding: 4px 10px; border-radius: 12px; }
-.comments-actions { display: flex; gap: 12px; margin-bottom: 16px; }
+.comments-actions { display: flex; gap: 12px; margin-bottom: 16px; align-items: flex-end; flex-wrap: wrap; }
+.max-comments-control {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 130px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+.max-comments-control input {
+  height: 38px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 0 10px;
+  font-size: 14px;
+  color: var(--text-primary);
+  background: white;
+}
+.max-comments-control input:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
 .action-btn { padding: 10px 20px; border-radius: 6px; font-size: 14px; font-weight: 500; cursor: pointer; transition: all 0.2s; border: none; }
 .fetch-btn { background: #ff6b6b; color: white; }
 .fetch-btn:hover:not(:disabled) { background: #ee5a5a; }
@@ -75,5 +109,8 @@ defineEmits(['fetch', 'toggle'])
   border-top-color: white; animation: spin 0.8s linear infinite;
 }
 @keyframes spin { to { transform: rotate(360deg); } }
-@media (max-width: 640px) { .comments-actions { flex-direction: column; } }
+@media (max-width: 640px) {
+  .comments-actions { flex-direction: column; align-items: stretch; }
+  .max-comments-control { width: 100%; }
+}
 </style>

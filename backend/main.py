@@ -78,6 +78,7 @@ class VideoRequest(BaseModel):
 class CommentRequest(BaseModel):
     bvid: str
     aid: int  # 需要aid来调用评论API
+    max_comments: int = 200
 
 
 CONTENT_ANALYSIS_TASKS: dict[str, dict[str, Any]] = {}
@@ -536,27 +537,33 @@ async def fetch_comments(request: CommentRequest):
     """爬取B站视频评论并保存到数据库"""
     bvid = request.bvid
     aid = request.aid
+    requested_max_comments = request.max_comments
+    effective_max_comments = min(max(requested_max_comments, 20), 5000)
     
-    print(f"开始爬取评论：bvid={bvid}, aid={aid}")
+    print(f"开始爬取评论：bvid={bvid}, aid={aid}, max_comments={effective_max_comments}")
     
     all_comments = []
     seen_rpids = set()  # 用于爬虫层去重，避免分页重叠导致重复
     page = 1
-    max_pages = 10  # 最多爬取10页，避免请求过多
+    page_size = min(effective_max_comments, 50)
+    max_safe_pages = (effective_max_comments + 19) // 20 + 5
+    stopped_reason = "达到用户设定的最大抓取数"
     
     async with httpx.AsyncClient() as client:
         try:
-            while page <= max_pages:
+            while len(all_comments) < effective_max_comments and page <= max_safe_pages:
                 # B站评论API
-                api_url = f"https://api.bilibili.com/x/v2/reply/main?type=1&oid={aid}&mode=3&ps=20&pn={page}"
+                api_url = f"https://api.bilibili.com/x/v2/reply/main?type=1&oid={aid}&mode=3&ps={page_size}&pn={page}"
                 response = await client.get(api_url, headers=HEADERS)
                 data = response.json()
                 
                 if data.get("code") != 0:
+                    stopped_reason = f"B站接口返回错误：{data.get('message', '未知错误')}"
                     break
                 
                 replies = data.get("data", {}).get("replies", [])
                 if not replies:
+                    stopped_reason = "接口已无更多一级评论"
                     break
                 
                 new_count = 0
@@ -568,9 +575,17 @@ async def fetch_comments(request: CommentRequest):
                         seen_rpids.add(rpid)
                         all_comments.append(content)
                         new_count += 1
+                        if len(all_comments) >= effective_max_comments:
+                            break
                 
                 print(f"已爬取第{page}页，新增{new_count}条评论（本页共{len(replies)}条）")
+                if new_count == 0:
+                    stopped_reason = "连续分页未发现新增一级评论"
+                    break
                 page += 1
+
+            if len(all_comments) < effective_max_comments and page > max_safe_pages:
+                stopped_reason = "达到服务端安全页数上限"
             
             # 保存到数据库
             saved_count = await save_comments(bvid, all_comments)
@@ -583,9 +598,14 @@ async def fetch_comments(request: CommentRequest):
             return {
                 "status": "success",
                 "bvid": bvid,
+                "requested_max_comments": requested_max_comments,
+                "effective_max_comments": effective_max_comments,
                 "total_fetched": len(all_comments),
                 "saved_count": saved_count,
-                "msg": f"成功爬取并保存{saved_count}条评论，情感分析已在后台启动"
+                "page_count": page - 1,
+                "page_size": page_size,
+                "stopped_reason": stopped_reason,
+                "msg": f"成功爬取并保存{saved_count}条一级评论，最多请求{effective_max_comments}条，停止原因：{stopped_reason}，情感分析已在后台启动"
             }
 
         except httpx.RequestError as exc:
