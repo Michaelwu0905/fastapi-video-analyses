@@ -16,7 +16,8 @@ from database import (
     init_db, save_comments, get_comments, get_comment_count,
     get_pending_comments, update_sentiments, get_sentiment_stats,
     save_analysis_history, update_analysis_history_summary, get_recent_analysis_history,
-    update_analysis_history_knowledge_effect, get_analysis_history_item, get_analysis_history_samples,
+    update_analysis_history_comment_count, update_analysis_history_knowledge_effect,
+    get_analysis_history_item, get_analysis_history_samples,
 )
 from sentiment import analyze_batch_async
 from content_analysis.pipeline import run_demo
@@ -573,6 +574,7 @@ async def fetch_comments(request: CommentRequest):
             
             # 保存到数据库
             saved_count = await save_comments(bvid, all_comments)
+            await update_analysis_history_comment_count(bvid, saved_count)
 
             # 触发后台情感分析任务（不阻塞当前请求）
             asyncio.create_task(run_sentiment_analysis(bvid))
@@ -633,7 +635,7 @@ async def get_sentiment_result(bvid: str):
         stats    = await get_sentiment_stats(bvid)
         comments = await get_comments(bvid)
         knowledge_effect = build_knowledge_effect_stats(comments, stats)
-        await update_analysis_history_knowledge_effect(bvid, knowledge_effect)
+        await update_analysis_history_knowledge_effect(bvid, knowledge_effect, stats)
         return {
             "status": "success",
             "bvid": bvid,

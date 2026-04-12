@@ -113,11 +113,11 @@ SYMBOL_NOTES = [
     {"symbol": "D", "label": "弹幕量", "description": "视频累计弹幕数量", "field": "danmaku_count"},
     {"symbol": "T", "label": "视频时长", "description": "视频总时长，单位为秒", "field": "duration_seconds", "unit": "秒"},
     {"symbol": "A", "label": "存续天数", "description": "视频发布至分析时刻的天数", "field": "age_days", "unit": "天"},
-    {"symbol": "N_cf", "label": "认知反馈评论数", "description": "表达学到了、看懂了等知识获得感的评论数量", "note": "当前历史表未存储原始计数，仅保存认知反馈占比"},
-    {"symbol": "N_q", "label": "问题型评论数", "description": "包含提问、追问、求解释等表达的评论数量", "note": "当前历史表未存储原始计数，仅保存问题型评论占比"},
-    {"symbol": "N_pos", "label": "正向评论数", "description": "情感分析结果为正向的评论数量", "note": "当前历史表未存储原始情感计数，仅保存情感极化度"},
-    {"symbol": "N_neg", "label": "负向评论数", "description": "情感分析结果为负向的评论数量", "note": "当前历史表未存储原始情感计数，仅保存情感极化度"},
-    {"symbol": "N_all", "label": "评论总数", "description": "参与知识传播效果统计的评论总数量", "field": "saved_comments_count"},
+    {"symbol": "N_cf", "label": "认知反馈评论数", "description": "表达学到了、看懂了等知识获得感的评论数量", "field": "cognitive_feedback_count"},
+    {"symbol": "N_q", "label": "问题型评论数", "description": "包含提问、追问、求解释等表达的评论数量", "field": "question_comment_count"},
+    {"symbol": "N_pos", "label": "正向评论数", "description": "情感分析结果为正向的评论数量", "field": "positive_comment_count"},
+    {"symbol": "N_neg", "label": "负向评论数", "description": "情感分析结果为负向的评论数量", "field": "negative_comment_count"},
+    {"symbol": "N_all", "label": "评论总数", "description": "参与知识传播效果统计的评论总数量", "field": "analyzed_comment_count", "fallback_field": "saved_comments_count"},
 ]
 
 
@@ -159,6 +159,8 @@ def build_symbol_notes(current_item: dict[str, Any]) -> list[dict[str, Any]]:
         field = note.get("field")
         if field:
             value = current_item.get(field, 0) or 0
+            if not value and note.get("fallback_field"):
+                value = current_item.get(note["fallback_field"], 0) or 0
             unit = note.get("unit", "")
             item["value"] = value
             item["value_label"] = f"{value}{unit}" if unit else str(value)

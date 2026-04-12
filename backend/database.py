@@ -99,6 +99,14 @@ async def init_db():
             "cognitive_feedback_ratio": "ALTER TABLE analysis_history ADD COLUMN cognitive_feedback_ratio REAL DEFAULT 0",
             "question_comment_ratio": "ALTER TABLE analysis_history ADD COLUMN question_comment_ratio REAL DEFAULT 0",
             "sentiment_polarization": "ALTER TABLE analysis_history ADD COLUMN sentiment_polarization REAL DEFAULT 0",
+            "analyzed_comment_count": "ALTER TABLE analysis_history ADD COLUMN analyzed_comment_count INTEGER DEFAULT 0",
+            "cognitive_feedback_count": "ALTER TABLE analysis_history ADD COLUMN cognitive_feedback_count INTEGER DEFAULT 0",
+            "question_comment_count": "ALTER TABLE analysis_history ADD COLUMN question_comment_count INTEGER DEFAULT 0",
+            "positive_comment_count": "ALTER TABLE analysis_history ADD COLUMN positive_comment_count INTEGER DEFAULT 0",
+            "neutral_comment_count": "ALTER TABLE analysis_history ADD COLUMN neutral_comment_count INTEGER DEFAULT 0",
+            "negative_comment_count": "ALTER TABLE analysis_history ADD COLUMN negative_comment_count INTEGER DEFAULT 0",
+            "pending_comment_count": "ALTER TABLE analysis_history ADD COLUMN pending_comment_count INTEGER DEFAULT 0",
+            "controversy_score": "ALTER TABLE analysis_history ADD COLUMN controversy_score REAL DEFAULT 0",
             "content_summary": "ALTER TABLE analysis_history ADD COLUMN content_summary TEXT DEFAULT ''",
             "updated_at": "ALTER TABLE analysis_history ADD COLUMN updated_at TEXT DEFAULT ''",
         }
@@ -224,8 +232,24 @@ async def update_analysis_history_summary(bvid: str, content_summary: str):
         await db.commit()
 
 
-async def update_analysis_history_knowledge_effect(bvid: str, knowledge_effect: dict):
+async def update_analysis_history_comment_count(bvid: str, saved_count: int):
+    """更新某条历史记录的已保存评论数。"""
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            """
+            UPDATE analysis_history
+            SET saved_comments_count = ?, updated_at = ?
+            WHERE bvid = ?
+            """,
+            (saved_count, _history_timestamp(), bvid),
+        )
+        await db.commit()
+
+
+async def update_analysis_history_knowledge_effect(bvid: str, knowledge_effect: dict, sentiment_stats: dict | None = None):
     """更新某条历史记录的知识传播效果相关指标。"""
+    sentiment_stats = sentiment_stats or {}
+    analyzed_count = sentiment_stats.get("total", knowledge_effect.get("total_comments", 0))
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute(
             """
@@ -234,6 +258,15 @@ async def update_analysis_history_knowledge_effect(bvid: str, knowledge_effect: 
                 cognitive_feedback_ratio = ?,
                 question_comment_ratio = ?,
                 sentiment_polarization = ?,
+                analyzed_comment_count = ?,
+                cognitive_feedback_count = ?,
+                question_comment_count = ?,
+                positive_comment_count = ?,
+                neutral_comment_count = ?,
+                negative_comment_count = ?,
+                pending_comment_count = ?,
+                controversy_score = ?,
+                saved_comments_count = ?,
                 updated_at = ?
             WHERE bvid = ?
             """,
@@ -241,6 +274,15 @@ async def update_analysis_history_knowledge_effect(bvid: str, knowledge_effect: 
                 knowledge_effect.get("cognitive_feedback_ratio", 0),
                 knowledge_effect.get("question_comment_ratio", 0),
                 knowledge_effect.get("sentiment_polarization", 0),
+                analyzed_count,
+                knowledge_effect.get("cognitive_feedback_count", 0),
+                knowledge_effect.get("question_comment_count", 0),
+                sentiment_stats.get("positive", 0),
+                sentiment_stats.get("neutral", 0),
+                sentiment_stats.get("negative", 0),
+                sentiment_stats.get("pending", 0),
+                knowledge_effect.get("controversy_score", 0),
+                analyzed_count,
                 _history_timestamp(),
                 bvid,
             ),
