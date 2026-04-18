@@ -2,10 +2,10 @@
   <div class="ahp-card">
     <div class="panel-header">
       <div>
-        <h3>AHP + 熵权法综合评价</h3>
-        <p class="panel-subtitle">理论判断与样本差异度结合后的传播力评价结果</p>
+        <h3>AHP 综合传播力评价</h3>
+        <p class="panel-subtitle">基于层次分析法的多维传播力评价结果</p>
       </div>
-      <span class="panel-badge">AHP + Entropy</span>
+      <span class="panel-badge">AHP</span>
     </div>
 
     <div v-if="loading" class="panel-state">正在计算综合评价结果...</div>
@@ -23,12 +23,12 @@
         </div>
         <div class="score-side">
           <div class="side-item">
-            <span class="side-label">AHP 占比</span>
-            <strong>{{ (result.alpha * 100).toFixed(0) }}%</strong>
+            <span class="side-label">评价方法</span>
+            <strong>AHP</strong>
           </div>
           <div class="side-item">
-            <span class="side-label">熵权占比</span>
-            <strong>{{ ((1 - result.alpha) * 100).toFixed(0) }}%</strong>
+            <span class="side-label">权重来源</span>
+            <strong>判断矩阵</strong>
           </div>
         </div>
       </div>
@@ -86,7 +86,7 @@
           <div class="contribution-table">
             <div class="table-head">
               <span>指标</span>
-              <span>组合权重</span>
+              <span>AHP 权重</span>
               <span>贡献值</span>
             </div>
             <div
@@ -95,14 +95,14 @@
               class="table-row"
             >
               <span>{{ row.name }}</span>
-              <span>{{ row.combined_weight }}</span>
+              <span>{{ row.ahp_weight }}</span>
               <span>{{ row.contribution }}</span>
             </div>
           </div>
         </section>
 
         <p class="method-note">
-          AHP 反映理论判断，熵权反映样本数据差异度；前端展示的是两者按固定比例组合后的结果。
+          AHP 通过判断矩阵确定各维度和指标权重，标准化后的指标值按 AHP 权重加权得到最终传播力得分。
         </p>
       </details>
 
@@ -152,7 +152,7 @@
         </section>
 
         <section class="detail-block">
-          <h4>3. 组合权重过程</h4>
+          <h4>3. AHP 权重过程</h4>
           <div
             v-for="group in formulaGroups"
             :key="`weight-${group.key}`"
@@ -270,19 +270,15 @@
         </section>
 
         <section class="detail-block">
-          <h4>3. 熵权法标准化与客观权重</h4>
+          <h4>3. 指标标准化</h4>
           <div class="latex-step">
-            <span>熵权法通用公式</span>
-            <LatexFormula :formula="latexView.entropy.standardization_formula" />
-            <LatexFormula :formula="latexView.entropy.proportion_formula" />
-            <LatexFormula :formula="latexView.entropy.entropy_formula" />
-            <LatexFormula :formula="latexView.entropy.divergence_formula" />
-            <LatexFormula :formula="latexView.entropy.weight_formula" />
+            <span>标准化通用公式</span>
+            <LatexFormula :formula="latexView.normalization.standardization_formula" />
           </div>
 
           <div class="latex-two-col">
             <div
-              v-for="row in latexView.entropy.normalization_rows"
+              v-for="row in latexView.normalization.normalization_rows"
               :key="`latex-norm-${row.key}`"
               class="latex-item"
             >
@@ -290,26 +286,15 @@
               <LatexFormula :formula="row.formula" />
             </div>
           </div>
-
-          <div class="latex-two-col">
-            <div
-              v-for="row in latexView.entropy.weight_rows"
-              :key="`latex-ew-${row.key}`"
-              class="latex-item"
-            >
-              <span>{{ row.name }}熵权</span>
-              <LatexFormula :formula="row.formula" />
-            </div>
-          </div>
         </section>
 
         <section class="detail-block">
-          <h4>4. AHP + 熵权法组合权重</h4>
-          <LatexFormula :formula="latexView.combined_weights.formula" />
+          <h4>4. AHP 最终权重</h4>
+          <LatexFormula :formula="latexView.final_weights.formula" />
           <div class="latex-two-col">
             <div
-              v-for="row in latexView.combined_weights.rows"
-              :key="`latex-combined-${row.key}`"
+              v-for="row in latexView.final_weights.rows"
+              :key="`latex-ahp-weight-${row.key}`"
               class="latex-item"
             >
               <span>{{ row.name }}</span>

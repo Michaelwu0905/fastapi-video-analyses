@@ -93,11 +93,11 @@ METRIC_DEFINITIONS = {
     "share_rate": r"X_{2} = \frac{S}{V}",
     "reply_rate": r"X_{3} = \frac{R}{V}",
     "danmaku_density": r"X_{4} = \frac{D}{T}",
-    "composite_interaction_rate": r"X_{5} = \frac{L + C + F + S + R}{V}",
+    "composite_interaction_rate": r"X_{5} = \frac{R + D}{V}",
     "like_rate": r"X_{6} = \frac{L}{V}",
     "coin_rate": r"X_{7} = \frac{C}{V}",
     "favorite_rate": r"X_{8} = \frac{F}{V}",
-    "recognition_rate": r"X_{9} = \frac{L + C + F}{V}",
+    "recognition_rate": r"X_{9} = \frac{C + F + S}{V}",
     "cognitive_feedback_ratio": r"X_{10} = \frac{N_{cf}}{N_{all}}",
     "question_comment_ratio": r"X_{11} = \frac{N_q}{N_{all}}",
     "sentiment_polarization": r"X_{12} = \frac{N_{pos} + N_{neg}}{N_{all}}",
@@ -187,7 +187,7 @@ def ahp_weights(matrix: np.ndarray) -> tuple[np.ndarray, float, float, float]:
     return weights, max_eigval, ci, cr
 
 
-def entropy_weights(data: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+def normalize_metric_data(data: np.ndarray) -> np.ndarray:
     min_vals = data.min(axis=0)
     max_vals = data.max(axis=0)
     ranges = max_vals - min_vals
@@ -198,32 +198,7 @@ def entropy_weights(data: np.ndarray) -> tuple[np.ndarray, np.ndarray, np.ndarra
             normalized[:, j] = 0.0
         else:
             normalized[:, j] = (data[:, j] - min_vals[j]) / ranges[j]
-
-    column_sums = normalized.sum(axis=0)
-    proportion = np.zeros_like(normalized, dtype=float)
-    for j in range(normalized.shape[1]):
-        if math.isclose(column_sums[j], 0.0):
-            proportion[:, j] = 0.0
-        else:
-            proportion[:, j] = normalized[:, j] / column_sums[j]
-
-    m = data.shape[0]
-    k = 1.0 / math.log(m) if m > 1 else 0.0
-    entropy = np.zeros(normalized.shape[1], dtype=float)
-    for j in range(normalized.shape[1]):
-        col = proportion[:, j]
-        valid = col > 0
-        if not np.any(valid):
-            entropy[j] = 1.0
-        else:
-            entropy[j] = -k * np.sum(col[valid] * np.log(col[valid]))
-
-    divergence = 1.0 - entropy
-    if math.isclose(divergence.sum(), 0.0):
-        weights = np.full_like(divergence, 1.0 / len(divergence))
-    else:
-        weights = divergence / divergence.sum()
-    return normalized, entropy, weights
+    return normalized
 
 
 def build_ahp_weights() -> tuple[dict[str, float], dict[str, dict[str, float]], dict[str, dict[str, float]], dict[str, dict[str, float]]]:
@@ -282,10 +257,9 @@ def score_to_level(score: float) -> str:
 def evaluate_video_with_samples(
     current_item: dict[str, Any],
     sample_items: list[dict[str, Any]],
-    alpha: float = 0.5,
 ) -> dict[str, Any]:
     if not sample_items:
-        raise ValueError("缺少样本数据，无法计算 AHP + 熵权法结果")
+        raise ValueError("缺少样本数据，无法计算 AHP 评价结果")
 
     sample_map = {item["bvid"]: item for item in sample_items if item.get("bvid")}
     sample_map[current_item["bvid"]] = current_item
@@ -295,17 +269,16 @@ def evaluate_video_with_samples(
         raise ValueError("样本数量不足，至少需要 3 条样本记录")
 
     data = np.array([build_metric_row(item) for item in merged_items], dtype=float)
-    normalized, entropy, entropy_weight_vector = entropy_weights(data)
+    normalized = normalize_metric_data(data)
     min_vals = data.min(axis=0)
     max_vals = data.max(axis=0)
     ranges = max_vals - min_vals
 
     criteria_weights, local_weights_nested, global_weights_nested, consistency = build_ahp_weights()
     ahp_weight_vector = flatten_global_weights(global_weights_nested)
-    combined_weight_vector = alpha * ahp_weight_vector + (1 - alpha) * entropy_weight_vector
-    combined_weight_vector = combined_weight_vector / combined_weight_vector.sum()
+    final_weight_vector = ahp_weight_vector
 
-    total_scores = normalized @ combined_weight_vector * 100
+    total_scores = normalized @ final_weight_vector * 100
     current_index = next(idx for idx, item in enumerate(merged_items) if item["bvid"] == current_item["bvid"])
     current_score = float(total_scores[current_index])
     current_metric_row = build_metric_row(current_item)
@@ -314,7 +287,7 @@ def evaluate_video_with_samples(
     dimension_formulas: list[dict[str, Any]] = []
     for criterion_name, cfg in CRITERIA.items():
         indices = [ALL_INDICATORS.index(ind) for ind in cfg["indicators"]]
-        dimension_weights = np.array([combined_weight_vector[idx] for idx in indices], dtype=float)
+        dimension_weights = np.array([final_weight_vector[idx] for idx in indices], dtype=float)
         if not math.isclose(dimension_weights.sum(), 0.0):
             dimension_weights = dimension_weights / dimension_weights.sum()
         dimension_score = float((normalized[current_index, indices] @ dimension_weights) * 100)
@@ -330,7 +303,8 @@ def evaluate_video_with_samples(
                 "key": indicator,
                 "name": INDICATOR_LABELS[indicator],
                 "normalized_value": round4(normalized_value),
-                "combined_weight": round4(float(combined_weight_vector[global_idx])),
+                "combined_weight": round4(float(final_weight_vector[global_idx])),
+                "ahp_weight": round4(float(ahp_weight_vector[global_idx])),
                 "dimension_weight": round4(dimension_weight),
                 "local_ahp_weight": round4(local_weights_nested[criterion_name][indicator]),
             })
@@ -355,7 +329,7 @@ def evaluate_video_with_samples(
     total_terms: list[dict[str, Any]] = []
     total_formula_fragments: list[str] = []
     for idx, indicator in enumerate(ALL_INDICATORS):
-        contribution = float(normalized[current_index, idx] * combined_weight_vector[idx] * 100)
+        contribution = float(normalized[current_index, idx] * final_weight_vector[idx] * 100)
         criterion_name = next(
             name for name, cfg in CRITERIA.items()
             if indicator in cfg["indicators"]
@@ -366,8 +340,7 @@ def evaluate_video_with_samples(
         range_value = float(ranges[idx])
         normalized_value = float(normalized[current_index, idx])
         ahp_weight = float(ahp_weight_vector[idx])
-        entropy_weight = float(entropy_weight_vector[idx])
-        combined_weight = float(combined_weight_vector[idx])
+        final_weight = float(final_weight_vector[idx])
 
         row = {
             "key": indicator,
@@ -376,8 +349,8 @@ def evaluate_video_with_samples(
             "criterion": criterion_name,
             "criterion_label": CRITERIA[criterion_name]["label"],
             "ahp_weight": ahp_weight,
-            "entropy_weight": entropy_weight,
-            "combined_weight": combined_weight,
+            "entropy_weight": None,
+            "combined_weight": final_weight,
             "contribution": contribution,
         }
         indicator_rows.append(row)
@@ -416,13 +389,10 @@ def evaluate_video_with_samples(
             "name": INDICATOR_LABELS[indicator],
             "criterion": criterion_name,
             "criterion_label": CRITERIA[criterion_name]["label"],
-            "alpha": round4(alpha),
             "ahp_weight": round4(ahp_weight),
-            "entropy_weight": round4(entropy_weight),
-            "combined_weight": round4(combined_weight),
+            "combined_weight": round4(final_weight),
             "formula_text": (
-                f"{INDICATOR_LABELS[indicator]}: {round4(alpha)} × {round4(ahp_weight)} + "
-                f"{round4(1 - alpha)} × {round4(entropy_weight)} = {round4(combined_weight)}"
+                f"{INDICATOR_LABELS[indicator]}: AHP最终权重 = {round4(ahp_weight)}"
             ),
         })
 
@@ -432,11 +402,12 @@ def evaluate_video_with_samples(
             "criterion": criterion_name,
             "criterion_label": CRITERIA[criterion_name]["label"],
             "normalized_value": round4(normalized_value),
-            "combined_weight": round4(combined_weight),
+            "combined_weight": round4(final_weight),
+            "ahp_weight": round4(ahp_weight),
             "contribution": round2(contribution),
         })
         total_formula_fragments.append(
-            f"{round4(normalized_value)} × {round4(combined_weight)} × 100"
+            f"{round4(normalized_value)} × {round4(final_weight)} × 100"
         )
 
     indicator_rows.sort(key=lambda item: item["contribution"], reverse=True)
@@ -486,8 +457,7 @@ def evaluate_video_with_samples(
     ]
 
     latex_normalization = []
-    latex_entropy_weights = []
-    latex_combined_weights = []
+    latex_final_weights = []
     for idx, indicator in enumerate(ALL_INDICATORS):
         raw_value = current_metric_row[idx]
         min_value = float(min_vals[idx])
@@ -510,24 +480,11 @@ def evaluate_video_with_samples(
             "formula": normalization_formula,
         })
 
-        divergence_value = float(1 - entropy[idx])
-        latex_entropy_weights.append({
+        latex_final_weights.append({
             "key": indicator,
             "name": INDICATOR_LABELS[indicator],
             "formula": (
-                rf"e_{{{idx + 1}}}={latex_num(float(entropy[idx]))},\quad "
-                rf"d_{{{idx + 1}}}=1-e_{{{idx + 1}}}={latex_num(divergence_value)},\quad "
-                rf"w^E_{{{idx + 1}}}={latex_num(float(entropy_weight_vector[idx]))}"
-            ),
-        })
-
-        latex_combined_weights.append({
-            "key": indicator,
-            "name": INDICATOR_LABELS[indicator],
-            "formula": (
-                rf"w_{{{idx + 1}}}={latex_num(alpha)}\times {latex_num(float(ahp_weight_vector[idx]))}"
-                rf"+{latex_num(1 - alpha)}\times {latex_num(float(entropy_weight_vector[idx]))}"
-                rf"={latex_num(float(combined_weight_vector[idx]))}"
+                rf"w_{{{idx + 1}}}=w^A_{{{idx + 1}}}={latex_num(float(final_weight_vector[idx]))}"
             ),
         })
 
@@ -548,16 +505,16 @@ def evaluate_video_with_samples(
     total_latex_terms = []
     contribution_latex_rows = []
     for idx, indicator in enumerate(ALL_INDICATORS):
-        contribution = float(normalized[current_index, idx] * combined_weight_vector[idx] * 100)
+        contribution = float(normalized[current_index, idx] * final_weight_vector[idx] * 100)
         total_latex_terms.append(
-            rf"{latex_num(float(normalized[current_index, idx]))}\times {latex_num(float(combined_weight_vector[idx]))}"
+            rf"{latex_num(float(normalized[current_index, idx]))}\times {latex_num(float(final_weight_vector[idx]))}"
         )
         contribution_latex_rows.append({
             "key": indicator,
             "name": INDICATOR_LABELS[indicator],
             "formula": (
                 rf"C_{{{idx + 1}}}={latex_num(float(normalized[current_index, idx]))}"
-                rf"\times {latex_num(float(combined_weight_vector[idx]))}\times 100"
+                rf"\times {latex_num(float(final_weight_vector[idx]))}\times 100"
                 rf"={latex_num(contribution, 2)}"
             ),
         })
@@ -576,18 +533,13 @@ def evaluate_video_with_samples(
             ),
             "indicator_matrices": latex_indicator_matrices,
         },
-        "entropy": {
+        "normalization": {
             "standardization_formula": r"z_{ij}=\frac{x_{ij}-\min(x_j)}{\max(x_j)-\min(x_j)}",
-            "proportion_formula": r"p_{ij}=\frac{z_{ij}}{\sum_{i=1}^{m}z_{ij}}",
-            "entropy_formula": r"e_j=-\frac{1}{\ln m}\sum_{i=1}^{m}p_{ij}\ln p_{ij}",
-            "divergence_formula": r"d_j=1-e_j",
-            "weight_formula": r"w_j^E=\frac{d_j}{\sum_{j=1}^{n}d_j}",
             "normalization_rows": latex_normalization,
-            "weight_rows": latex_entropy_weights,
         },
-        "combined_weights": {
-            "formula": r"w_j=\alpha w_j^A+(1-\alpha)w_j^E",
-            "rows": latex_combined_weights,
+        "final_weights": {
+            "formula": r"w_j=w_j^A",
+            "rows": latex_final_weights,
         },
         "dimension_scores": latex_dimension_scores,
         "total_score": {
@@ -602,7 +554,6 @@ def evaluate_video_with_samples(
         "level": score_to_level(current_score),
         "rank": rank,
         "sample_size": len(merged_items),
-        "alpha": alpha,
         "dimension_scores": {
             "breadth": round2(criteria_scores["breadth"]),
             "depth": round2(criteria_scores["depth"]),
@@ -620,7 +571,7 @@ def evaluate_video_with_samples(
             {
                 **row,
                 "ahp_weight": round4(row["ahp_weight"]),
-                "entropy_weight": round4(row["entropy_weight"]),
+                "entropy_weight": None,
                 "combined_weight": round4(row["combined_weight"]),
                 "contribution": round2(row["contribution"]),
             }

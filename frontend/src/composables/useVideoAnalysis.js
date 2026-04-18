@@ -59,7 +59,7 @@ export function useVideoAnalysis() {
             ahpEvaluation.value = data.result
         } catch (err) {
             ahpEvaluation.value = null
-            ahpEvaluationError.value = err.response?.data?.detail ?? '无法计算 AHP + 熵权法结果'
+            ahpEvaluationError.value = err.response?.data?.detail ?? '无法计算 AHP 评价结果'
         } finally {
             ahpEvaluationLoading.value = false
         }

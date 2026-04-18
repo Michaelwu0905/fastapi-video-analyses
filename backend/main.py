@@ -451,12 +451,6 @@ async def analyze_video(request: VideoRequest):
             share = stat.get("share", 0)
             reply = stat.get("reply", 0)
             
-            # 计算综合得分
-            composite_score = (0.728 * view + 0.154 * danmaku + 0.327 * coin 
-                             + 0.242 * favorite - 0.192 * like - 0.157 * share)
-            
-            # 计算粘性度 (避免除零)
-            stickiness = (coin + favorite + share) / view if view > 0 else 0
             daily_views = view / age_days
             like_rate = safe_div(like, view)
             coin_rate = safe_div(coin, view)
@@ -496,11 +490,7 @@ async def analyze_video(request: VideoRequest):
                 "pubdate": pubdate,
                 "age_days": age_days,
                 "saved_comments_count": saved_count,  # 已保存的评论数
-                # 传播力指标
-                "composite_score": round(composite_score, 2),
-                "composite_score_formatted": format_number(round(composite_score, 2)),
-                "stickiness": round(stickiness, 4),
-                "stickiness_percent": f"{stickiness * 100:.2f}%",
+                # AHP 传播力评价的基础指标
                 "daily_views": round(daily_views, 2),
                 "daily_views_formatted": format_number(round(daily_views)),
                 "like_rate": round(like_rate, 6),
@@ -675,14 +665,14 @@ async def get_sentiment_result(bvid: str):
 
 @app.get("/api/ahp-evaluation/{bvid}")
 async def get_ahp_evaluation_result(bvid: str):
-    """基于历史样本实时计算 AHP + 熵权法综合评价结果。"""
+    """基于历史样本实时计算 AHP 综合评价结果。"""
     try:
         current_item = await get_analysis_history_item(bvid)
         if current_item is None:
             raise HTTPException(status_code=404, detail="未找到该视频的历史分析记录，请先完成视频分析")
 
         sample_items = await get_analysis_history_samples(limit=100)
-        result = evaluate_video_with_samples(current_item, sample_items, alpha=0.5)
+        result = evaluate_video_with_samples(current_item, sample_items)
         return {
             "status": "success",
             "bvid": bvid,
@@ -693,7 +683,7 @@ async def get_ahp_evaluation_result(bvid: str):
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc))
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"计算 AHP + 熵权法结果失败：{str(exc)}")
+        raise HTTPException(status_code=500, detail=f"计算 AHP 评价结果失败：{str(exc)}")
 
 
 @app.get("/api/health")

@@ -1,21 +1,8 @@
 <template>
   <div class="metrics-card">
     <div class="panel-header">
-      <h3>多维传播力体系</h3>
-      <span class="panel-note">保留原综合分用于对照</span>
-    </div>
-
-    <div class="overview-grid">
-      <div class="overview-item">
-        <span class="metric-label">综合得分</span>
-        <span class="metric-value">{{ info.composite_score_formatted }}</span>
-        <span class="metric-raw">({{ info.composite_score }})</span>
-      </div>
-      <div class="overview-item">
-        <span class="metric-label">粘性度</span>
-        <span class="metric-value">{{ info.stickiness_percent }}</span>
-        <span class="metric-raw">({{ info.stickiness }})</span>
-      </div>
+      <h3>传播力基础指标</h3>
+      <span class="panel-note">作为 AHP 传播力评价的输入依据</span>
     </div>
 
     <div class="dimension-list">
@@ -85,6 +72,30 @@
           </div>
         </div>
       </section>
+
+      <section class="dimension-card">
+        <div class="dimension-header">
+          <h4>知识传播效果</h4>
+          <span>衡量评论区是否产生知识反馈</span>
+        </div>
+        <div v-if="knowledgeEffect" class="dimension-metrics">
+          <div class="dimension-metric">
+            <span class="dimension-label">认知反馈占比</span>
+            <strong>{{ knowledgeEffect.cognitive_feedback_ratio_percent }}</strong>
+          </div>
+          <div class="dimension-metric">
+            <span class="dimension-label">问题型评论占比</span>
+            <strong>{{ knowledgeEffect.question_comment_ratio_percent }}</strong>
+          </div>
+          <div class="dimension-metric wide">
+            <span class="dimension-label">情感极化度</span>
+            <strong>{{ knowledgeEffect.sentiment_polarization_percent }}</strong>
+          </div>
+        </div>
+        <div v-else class="dimension-placeholder">
+          抓取评论并完成情感分析后，将在这里显示知识传播效果指标。
+        </div>
+      </section>
     </div>
   </div>
 </template>
@@ -92,6 +103,7 @@
 <script setup>
 defineProps({
   info: { type: Object, required: true },
+  knowledgeEffect: { type: Object, default: null },
 })
 </script>
 
@@ -117,22 +129,9 @@ defineProps({
   font-size: 12px;
   color: var(--text-muted);
 }
-.overview-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; }
-.overview-item {
-  background: linear-gradient(180deg, #f8fbff 0%, #f3f6f8 100%);
-  padding: 16px;
-  border-radius: 12px;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 4px;
-}
-.metric-label { font-size: 12px; color: var(--text-muted); }
-.metric-value { font-size: 24px; font-weight: 700; color: var(--primary-color); }
-.metric-raw { font-size: 11px; color: var(--text-muted); }
 .dimension-list {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 16px;
 }
 .dimension-card {
@@ -184,8 +183,19 @@ defineProps({
   font-size: 18px;
   color: var(--primary-color);
 }
+.dimension-placeholder {
+  background: white;
+  border: 1px dashed #d9e1e8;
+  border-radius: 10px;
+  padding: 14px;
+  font-size: 12px;
+  color: var(--text-muted);
+  line-height: 1.6;
+}
+@media (max-width: 1100px) {
+  .dimension-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
 @media (max-width: 640px) {
-  .overview-grid,
   .dimension-list,
   .dimension-metrics { grid-template-columns: 1fr; }
 }

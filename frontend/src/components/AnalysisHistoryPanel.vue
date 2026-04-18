@@ -26,7 +26,7 @@
         <div class="history-content">
           <div class="history-bvid">{{ item.bvid }}</div>
           <div class="history-title">{{ item.title }}</div>
-          <div class="history-meta">{{ item.author }} · {{ item.composite_score_formatted || item.composite_score }}</div>
+          <div class="history-meta">{{ item.author }} · 播放 {{ formatCount(item.view_count) }}</div>
           <div class="history-summary">
             {{ item.content_summary || '已记录基础分析结果，点击重新查看' }}
           </div>
@@ -44,6 +44,12 @@ defineProps({
 })
 
 defineEmits(['select'])
+
+function formatCount(value) {
+  const count = Number(value || 0)
+  if (count >= 10000) return `${(count / 10000).toFixed(1)}万`
+  return String(count)
+}
 </script>
 
 <style scoped>

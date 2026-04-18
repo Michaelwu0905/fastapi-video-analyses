@@ -21,7 +21,7 @@
       <div v-if="videoInfo" class="result-layout">
         <VideoInfoCard :info="videoInfo" />
         <StatsGrid :info="videoInfo" />
-        <MetricsCard :info="videoInfo" />
+        <MetricsCard :info="videoInfo" :knowledge-effect="knowledgeEffect" />
         <AHPEntropyResultCard
           :result="ahpEvaluation"
           :loading="ahpEvaluationLoading"

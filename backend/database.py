@@ -133,11 +133,10 @@ async def save_analysis_history(video_info: dict, content_summary: str | None = 
                 bvid, url, title, author, cover, pubdate,
                 view_count, like_count, danmaku_count, coin_count, favorite_count, share_count,
                 reply_count, duration_seconds, age_days, saved_comments_count,
-                composite_score, composite_score_formatted, stickiness_percent,
                 daily_views, like_rate, coin_rate, favorite_rate, share_rate, reply_rate,
                 composite_interaction_rate, recognition_rate, danmaku_density,
                 content_summary, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(bvid) DO UPDATE SET
                 url = excluded.url,
                 title = excluded.title,
@@ -154,9 +153,6 @@ async def save_analysis_history(video_info: dict, content_summary: str | None = 
                 duration_seconds = excluded.duration_seconds,
                 age_days = excluded.age_days,
                 saved_comments_count = excluded.saved_comments_count,
-                composite_score = excluded.composite_score,
-                composite_score_formatted = excluded.composite_score_formatted,
-                stickiness_percent = excluded.stickiness_percent,
                 daily_views = excluded.daily_views,
                 like_rate = excluded.like_rate,
                 coin_rate = excluded.coin_rate,
@@ -189,9 +185,6 @@ async def save_analysis_history(video_info: dict, content_summary: str | None = 
                 video_info.get("duration", 0),
                 video_info.get("age_days", 0),
                 video_info.get("saved_comments_count", 0),
-                video_info.get("composite_score", 0),
-                video_info.get("composite_score_formatted", ""),
-                video_info.get("stickiness_percent", ""),
                 video_info.get("daily_views", 0),
                 video_info.get("like_rate", 0),
                 video_info.get("coin_rate", 0),
@@ -299,8 +292,7 @@ async def get_recent_analysis_history(limit: int = 10) -> list[dict]:
             SELECT
                 bvid, url, title, author, cover, pubdate,
                 view_count, like_count, saved_comments_count,
-                composite_score, composite_score_formatted,
-                stickiness_percent, content_summary, updated_at
+                content_summary, updated_at
             FROM analysis_history
             ORDER BY updated_at DESC, id DESC
             LIMIT ?
