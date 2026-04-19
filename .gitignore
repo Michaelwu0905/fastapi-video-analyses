@@ -108,3 +108,4 @@ essays/
 *.md
 !README.md
 !*/README.md
+charts/

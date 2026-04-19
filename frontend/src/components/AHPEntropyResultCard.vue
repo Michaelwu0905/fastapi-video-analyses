@@ -106,6 +106,11 @@
         </p>
       </details>
 
+      <details class="details-panel workflow-panel">
+        <summary>查看 AHP 计算流程图</summary>
+        <AHPWorkflowViewer :result="result" />
+      </details>
+
       <details class="details-panel formula-panel">
         <summary>查看文本计算明细</summary>
 
@@ -339,6 +344,7 @@
 <script setup>
 import { computed } from 'vue'
 import LatexFormula from './LatexFormula.vue'
+import AHPWorkflowViewer from './AHPWorkflowViewer.vue'
 
 const props = defineProps({
   result: { type: Object, default: null },
@@ -504,6 +510,9 @@ const latexView = computed(() => props.result?.formula_view?.latex_view ?? null)
   margin-top: -4px;
 }
 .latex-panel {
+  margin-top: -4px;
+}
+.workflow-panel {
   margin-top: -4px;
 }
 .details-panel summary {
